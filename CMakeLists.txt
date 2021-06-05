@@ -7,7 +7,8 @@ set(EXEC_NAME hdw)
 
 # Source files
 set(EXEC_FILES 
-	src/main.c)
+	src/main.c
+	src/hdw.c)
 
 # Force compiler to high warning levels
 if(MSVC)
