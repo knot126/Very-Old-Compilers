@@ -63,7 +63,17 @@ static void hdw_freetokens(hdw_tokenarray *array) {
 	free(array->tokens);
 }
 
-#define ADD_SINGLE_TOKEN(TYPE, NAME) hdw_addtoken(tokens, TYPE, NAME, line, col)
+static bool hdw_tokmatch(const char * const code, size_t * const head, char what) {
+	if (code[*head] == what) {
+		(*head)++;
+		return true;
+	}
+	
+	return false;
+}
+
+#define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(tokens, TYPE, NAME, line, col)
+#define MATCH(CHAR) hdw_tokmatch(code, &head, CHAR)
 
 int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens, const char * const code) {
 	/**
@@ -79,31 +89,45 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 	memset(tokens, 0, sizeof(hdw_tokenarray));
 	
 	while (head < len) {
-		char current = code[head];
-		//printf("Have: '%c'\n", current);
+		// NOTE: Taking advantage of the postfix ++ operator returning the
+		// unicremented value first.
+		char current = code[head++];
 		
-		if      (current == '(') { ADD_SINGLE_TOKEN(HDW_PARL, NULL); }
-		else if (current == ')') { ADD_SINGLE_TOKEN(HDW_PARE, NULL); }
-		
-		else if (current == '{') { ADD_SINGLE_TOKEN(HDW_CURLYL, NULL); }
-		else if (current == '}') { ADD_SINGLE_TOKEN(HDW_CURLYE, NULL); }
-		
-		else if (current == '[') { ADD_SINGLE_TOKEN(HDW_BRAKL, NULL); }
-		else if (current == ']') { ADD_SINGLE_TOKEN(HDW_BRAKE, NULL); }
-		
-		else if (current == '+') { ADD_SINGLE_TOKEN(HDW_PLUS, NULL); }
-		else if (current == '-') { ADD_SINGLE_TOKEN(HDW_MINUS, NULL); }
-		else if (current == '*') { ADD_SINGLE_TOKEN(HDW_ASTRESK, NULL); }
-		else if (current == '/') {
-			ADD_SINGLE_TOKEN((code[head + 1] == '/') ? (head++, HDW_COMMENT) : (HDW_BACK), NULL);
+		// Matching simple tokens //
+		/* Parenthesis */
+		if      (current == '(') { SIMPL_TOKEN(HDW_PARL, NULL); }
+		else if (current == ')') { SIMPL_TOKEN(HDW_PARE, NULL); }
+		/* Curly Brackets */
+		else if (current == '{') { SIMPL_TOKEN(HDW_CURLYL, NULL); }
+		else if (current == '}') { SIMPL_TOKEN(HDW_CURLYE, NULL); }
+		/* Brackets */
+		else if (current == '[') { SIMPL_TOKEN(HDW_BRAKL, NULL); }
+		else if (current == ']') { SIMPL_TOKEN(HDW_BRAKE, NULL); }
+		/* Math Operators */
+		else if (current == '+') { SIMPL_TOKEN(HDW_PLUS, NULL); }
+		else if (current == '-') { SIMPL_TOKEN(HDW_MINUS, NULL); }
+		else if (current == '*') { SIMPL_TOKEN(HDW_ASTRESK, NULL); }
+		else if (current == '/') { 
+			if (MATCH('/')) { // Comment is a special case
+				while (code[head] != '\n' && code[head] != '\0') {
+					++head;
+				}
+			}
+			else {
+				SIMPL_TOKEN(HDW_BACK, NULL);
+			}
 		}
-		else if (current == '%') { ADD_SINGLE_TOKEN(HDW_MOD, NULL); }
-		
-		else if (current == '&') {
-			ADD_SINGLE_TOKEN((code[head + 1] == '&') ? (head++, HDW_AND) : (HDW_AMP), NULL);
-		}
-		else if (current == ';') { ADD_SINGLE_TOKEN(HDW_SEMI, NULL); }
-		else if (current == '\n') {}
+		else if (current == '%') { SIMPL_TOKEN(HDW_MOD, NULL); }
+		/* Comparison and Flow (mostly) */
+		else if (current == '!') { SIMPL_TOKEN(MATCH('=') ? HDW_NOTEQ : HDW_NOT, NULL); }
+		else if (current == '=') { SIMPL_TOKEN(MATCH('=') ? HDW_EQ : HDW_SET, NULL); }
+		else if (current == '<') { SIMPL_TOKEN(MATCH('=') ? HDW_LTEQ : HDW_LT, NULL); }
+		else if (current == '>') { SIMPL_TOKEN(MATCH('=') ? HDW_GTEQ : HDW_GT, NULL); }
+		else if (current == '&') { SIMPL_TOKEN(MATCH('&') ? HDW_AND : HDW_AMP, NULL); }
+		else if (current == '|') { SIMPL_TOKEN(MATCH('|') ? HDW_OR : HDW_BAR, NULL); }
+		/* Misc */
+		else if (current == ';') { SIMPL_TOKEN(HDW_SEMI, NULL); }
+		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
 		else {
 			char *msg = (char *) malloc(256 * sizeof(char));
 			snprintf(msg, 256, "Line %u, Column %u: Unrecogised tokeniser character '%c'.", line, col, current);
@@ -113,14 +137,14 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		}
 		
 		if (current == '\n') { line++; col = 0; }
-		head++;
 		col++;
 	}
 	
 	return error;
 }
 
-#undef ADD_SINGLE_TOKEN
+#undef MATCH
+#undef SIMPL_TOKEN
 
 // =============================================================================
 // Codeblock Execution
