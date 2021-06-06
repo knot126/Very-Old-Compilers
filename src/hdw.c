@@ -55,10 +55,22 @@ int hdw_exec(hdw_script * restrict script, const char * const code) {
 		}
 	}
 	
+	script->errmsg = "Feature is not supported.";
 	
 	// handle temporary script cleanup
 	if (script_temp) {
 		hdw_destroy(script);
+	}
+}
+
+int32_t hdw_error(hdw_script * const restrict script, const char ** const restrict what) {
+	if (!script->errmsg) {
+		return 0;
+	}
+	else {
+		*what = script->errmsg;
+		script->errmsg = NULL;
+		return 1;
 	}
 }
 
@@ -124,11 +136,18 @@ void hdw_bulitin_prompt(void) {
 		
 		// check for error with line
 		if (feof(stdin) || !p) {
+			printf("\n");
 			break;
 		}
 		
 		// act on line
 		hdw_exec(context, buffer);
+		
+		// print any error
+		const char *error;
+		if (hdw_error(context, &error)) {
+			printf("Error: %s\n", error);
+		}
 	}
 	
 	hdw_destroy(context);
