@@ -85,6 +85,16 @@ typedef struct hdw_tokenarray {
 	size_t count;       // Number of tokens
 } hdw_tokenarray;
 
+typedef struct hdw_tokeniser {
+	hdw_tokenarray *tokens;   // Array of tokens
+	const char * const code;  // Pointer to the code
+	size_t len;               // Length
+	size_t head;              // The head position
+	size_t line;              // The current line number
+	size_t col;               // The current column number
+	int32_t error;            // Number of errors in session
+} hdw_tokeniser;
+
 // =============================================================================
 // Errors
 // =============================================================================

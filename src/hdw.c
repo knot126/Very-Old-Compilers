@@ -8,6 +8,30 @@
 #include "hdw.h"
 
 // =============================================================================
+// Utilites
+// =============================================================================
+
+static char *hdw_strndup(const char * const src, size_t max) {
+	size_t len = 0;
+	
+	while (len < max && src[len] != '\0') {
+		++len;
+	}
+	
+	char *string = malloc((len + 1) * sizeof(char));
+	
+	if (!string) {
+		return NULL;
+	}
+	
+	memcpy(string, src, len);
+	
+	string[len] = '\0';
+	
+	return string;
+}
+
+// =============================================================================
 // Script Instance Management
 // =============================================================================
 
@@ -39,6 +63,14 @@ void hdw_destroy(hdw_script *c) {
 // Tokeniser
 // =============================================================================
 
+static void hdw_freetokens(hdw_tokenarray *array) {
+	/**
+	 * Frees an array of tokens.
+	 */
+	
+	free(array->tokens);
+}
+
 static int32_t hdw_addtoken(hdw_tokenarray * const array, const uint16_t type, const char *name, const uint32_t line, const uint16_t col) {
 	/**
 	 * Adds a token to the list at array.
@@ -59,11 +91,28 @@ static int32_t hdw_addtoken(hdw_tokenarray * const array, const uint16_t type, c
 	return 0;
 }
 
-static void hdw_freetokens(hdw_tokenarray *array) {
-	free(array->tokens);
+static bool hdw_endtoken(hdw_tokeniser *tokeniser) {
+	if (tokeniser->code[tokeniser->head] == '\0') {
+		return true;
+	}
+	
+	return false;
 }
 
-static bool hdw_tokmatch(const char * const code, size_t * const head, char what) {
+static char hdw_peektoken(const char * const code, size_t * const head) {
+	return code[*head];
+}
+
+static char hdw_advancetoken(const char * const code, size_t * const head) {
+	return code[(*head)++];
+}
+
+static bool hdw_matchtoken(const char * const code, size_t * const head, char what) {
+	/**
+	 * If the tokens matches the next unconsumed token, this function will 
+	 * consume a token and return true; otherwise, it will just return false.
+	 */
+	
 	if (code[*head] == what) {
 		(*head)++;
 		return true;
@@ -72,26 +121,53 @@ static bool hdw_tokmatch(const char * const code, size_t * const head, char what
 	return false;
 }
 
-#define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(tokens, TYPE, NAME, line, col)
-#define MATCH(CHAR) hdw_tokmatch(code, &head, CHAR)
+static bool hdw_stringtoken(hdw_tokeniser *tokeniser) {
+	/**
+	 * This function handles a string token, returns true if the string is not
+	 * properly terminated.
+	 */
+	
+	size_t start = (tokeniser->head);
+	
+	while (hdw_peektoken(tokeniser->code, &tokeniser->head) != '"' && !hdw_endtoken(tokeniser)) {
+		hdw_advancetoken(tokeniser->code, &tokeniser->head);
+	}
+	
+	if (hdw_endtoken(tokeniser)) {
+		return true;
+	}
+	
+	size_t last = (tokeniser->head);
+	
+	hdw_addtoken(tokeniser->tokens, HDW_STRING, hdw_strndup(&tokeniser->code[start], last - start), 0, 0);
+	
+	return false;
+}
+
+#define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(tokeniser.tokens, TYPE, NAME, tokeniser.line, tokeniser.col)
+#define MATCH(CHAR) hdw_matchtoken(tokeniser.code, &tokeniser.head, CHAR)
 
 int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens, const char * const code) {
 	/**
 	 * Tokenise a stream of characters.
 	 */
 	
-	const size_t len = strlen((char *) code);
-	size_t head = 0;
-	size_t line = 1;
-	size_t col = 1;
-	int32_t error = 0;
+	hdw_tokeniser tokeniser = {
+		.tokens = tokens,
+		.code = code,
+		.len = strlen((char *) code),
+		.head = 0,
+		.line = 1,
+		.col = 1,
+		.error = 0,
+	};
 	
 	memset(tokens, 0, sizeof(hdw_tokenarray));
 	
-	while (head < len) {
+	while (tokeniser.head < tokeniser.len) {
 		// NOTE: Taking advantage of the postfix ++ operator returning the
 		// unicremented value first.
-		char current = code[head++];
+		char current = hdw_advancetoken(tokeniser.code, &tokeniser.head);
 		
 		// Matching simple tokens //
 		/* Parenthesis */
@@ -109,8 +185,8 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		else if (current == '*') { SIMPL_TOKEN(HDW_ASTRESK, NULL); }
 		else if (current == '/') { 
 			if (MATCH('/')) { // Comment is a special case
-				while (code[head] != '\n' && code[head] != '\0') {
-					++head;
+				while (tokeniser.code[tokeniser.head] != '\n' && tokeniser.code[tokeniser.head] != '\0') {
+					++tokeniser.head;
 				}
 			}
 			else {
@@ -125,22 +201,34 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		else if (current == '>') { SIMPL_TOKEN(MATCH('=') ? HDW_GTEQ : HDW_GT, NULL); }
 		else if (current == '&') { SIMPL_TOKEN(MATCH('&') ? HDW_AND : HDW_AMP, NULL); }
 		else if (current == '|') { SIMPL_TOKEN(MATCH('|') ? HDW_OR : HDW_BAR, NULL); }
+		/* Literals */
+		else if (current == '"') {
+			if (hdw_stringtoken(&tokeniser)) {
+				char *msg = (char *) malloc(256 * sizeof(char));
+				if (msg) {
+					snprintf(msg, 256, "Line %u, Column %u: Non-terminated string.", tokeniser.line, tokeniser.col);
+					hdw_puterror(script, msg);
+					tokeniser.error += 1;
+				}
+			}
+		}
 		/* Misc */
 		else if (current == ';') { SIMPL_TOKEN(HDW_SEMI, NULL); }
 		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
 		else {
 			char *msg = (char *) malloc(256 * sizeof(char));
-			snprintf(msg, 256, "Line %u, Column %u: Unrecogised tokeniser character '%c'.", line, col, current);
-			
-			hdw_puterror(script, msg);
-			error += 1;
+			if (msg) {
+				snprintf(msg, 256, "Line %u, Column %u: Unrecogised tokeniser character '%c'.", tokeniser.line, tokeniser.col, current);
+				hdw_puterror(script, msg);
+				tokeniser.error += 1;
+			}
 		}
 		
-		if (current == '\n') { line++; col = 0; }
-		col++;
+		if (current == '\n') { tokeniser.line++; tokeniser.col = 0; }
+		tokeniser.col++;
 	}
 	
-	return error;
+	return tokeniser.error;
 }
 
 #undef MATCH
