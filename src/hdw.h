@@ -4,7 +4,8 @@
 #include <inttypes.h>
 #include <stdlib.h>
 
-typedef size_t hdw_size_t;
+typedef size_t hdw_size_t; // Unused for now
+typedef int32_t hdw_int_t; // Unused for now
 
 // Tokeniser
 enum {
@@ -54,6 +55,8 @@ enum {
 	HDW_AND,   // &&
 	HDW_OR,    // ||
 	
+	HDW_COMMENT, // "//"
+	
 	HDW_STRUCT,   // 'struct'
 	HDW_CLASS,    // 'class'
 	HDW_FUNCTION, // 'function'
@@ -71,35 +74,66 @@ enum {
 };
 
 typedef struct hdw_token {
-	char *name;
-	uint32_t line;
-	uint16_t col;
-	uint16_t type;
+	const char *name;   // Text of the token
+	uint32_t line;      // The line the token is on
+	uint16_t col;       // The column of the token
+	uint16_t type;      // The type the token is
 } hdw_token;
 
 typedef struct hdw_tokenarray {
-	hdw_token *tokens;
-	size_t count;
+	hdw_token *tokens;  // Pointer to the tokens
+	size_t count;       // Number of tokens
 } hdw_tokenarray;
 
+// =============================================================================
+// Errors
+// =============================================================================
+
+enum hdw_retcode {
+	HDW_ERR_OKAY = 0,
+	HDW_ERR_ENV = -1,
+	HDW_ERR_PRETOKENISER = -2,
+	HDW_ERR_TOKENISER = -3,
+	HDW_ERR_PARSER = -4,
+};
+
+typedef struct hdw_error {
+	const char *message; // the message assocaited with the error
+} hdw_error;
+
+typedef struct hdw_errorarray {
+	hdw_error *content;  // The list of error structures
+	size_t count;        // The number of errors
+} hdw_errorarray;
+
+// =============================================================================
 // Script State
+// =============================================================================
+
 typedef struct hdw_script {
 	// Error handling
-	const char *errmsg;  // NULL if there is no error, pointer to message if there is
-	
-	// 
+	hdw_errorarray errors;  // NULL if there is no error, pointer to message if there is
 } hdw_script;
 
 // Instances
-hdw_script *hdw_create();
+// =============================================================================
+hdw_script *hdw_create(void);
 void hdw_destroy(hdw_script *c);
 
 // Low level
-int hdw_exec(hdw_script * restrict script, const char * const code);
+// =============================================================================
+int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens, const char * const code);
+int32_t hdw_exec(hdw_script * restrict script, const char * const code);
+int32_t hdw_crexec(hdw_script ** restrict script, const char * const code);
 
 // Errors
-int32_t hdw_error(hdw_script * const restrict script, const char ** const restrict what);
+// =============================================================================
+void hdw_puterror(hdw_script * const restrict script, const char * const restrict message);
+void hdw_printerror(const hdw_script * const restrict script);
+void hdw_reseterror(hdw_script * const restrict script);
+int32_t hdw_haserror(hdw_script * const restrict script);
 
 // High level
+// =============================================================================
 int hdw_dofile(const char * const path);
 void hdw_bulitin_prompt(void);
