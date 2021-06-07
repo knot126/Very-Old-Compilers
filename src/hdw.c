@@ -99,12 +99,14 @@ static bool hdw_endtoken(hdw_tokeniser *tokeniser) {
 	return false;
 }
 
-static char hdw_peektoken(const char * const code, size_t * const head) {
-	return code[*head];
+static char hdw_peektoken(hdw_tokeniser *tokeniser) {
+	return tokeniser->code[tokeniser->head];
 }
 
 static char hdw_advancetoken(const char * const code, size_t * const head) {
-	return code[(*head)++];
+	char v = code[*head];
+	*head += 1;
+	return v;
 }
 
 static bool hdw_matchtoken(const char * const code, size_t * const head, char what) {
@@ -129,15 +131,13 @@ static bool hdw_stringtoken(hdw_tokeniser *tokeniser) {
 	
 	size_t start = (tokeniser->head);
 	
-	while (hdw_peektoken(tokeniser->code, &tokeniser->head) != '"' && !hdw_endtoken(tokeniser)) {
-		hdw_advancetoken(tokeniser->code, &tokeniser->head);
-	}
+	while (hdw_advancetoken(tokeniser->code, &tokeniser->head) != '"' && !hdw_endtoken(tokeniser));
 	
 	if (hdw_endtoken(tokeniser)) {
 		return true;
 	}
 	
-	size_t last = (tokeniser->head);
+	size_t last = (tokeniser->head) - 1;
 	
 	hdw_addtoken(tokeniser->tokens, HDW_STRING, hdw_strndup(&tokeniser->code[start], last - start), 0, 0);
 	
