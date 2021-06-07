@@ -304,6 +304,14 @@ static bool hdw_symboltoken(hdw_tokeniser * const tokeniser) {
 		{"class", HDW_CLASS},
 		{"function", HDW_FUNCTION},
 		{"if", HDW_IF},
+		{"elseif", HDW_ELSEIF},
+		{"else", HDW_ELSE},
+		{"for", HDW_FOR},
+		{"while", HDW_WHILE},
+		{"return", HDW_RETURN},
+		{"true", HDW_TRUE},
+		{"false", HDW_FALSE},
+		{"null", HDW_NULL},
 	};
 	
 	size_t start = (tokeniser->head) - 1;
@@ -378,6 +386,15 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 					++tokeniser.head;
 				}
 			}
+			else if (MATCH('*')) { // Handle multi-line comments as well
+				current = hdw_advancetoken(&tokeniser);
+				
+				while (!((hdw_advancetoken(&tokeniser) == '*') && (hdw_advancetoken(&tokeniser) == '/')) && !hdw_endtoken(&tokeniser)) {
+					if (hdw_peektoken(&tokeniser) == '\n') {
+						hdw_newlinetoken(&tokeniser);
+					}
+				}
+			}
 			else {
 				SIMPL_TOKEN(HDW_BACK, NULL);
 			}
@@ -411,6 +428,13 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		}
 		/* Misc */
 		else if (current == ';') { SIMPL_TOKEN(HDW_SEMI, NULL); }
+		else if (current == ',') { SIMPL_TOKEN(HDW_COMMA, NULL); }
+		else if (current == '@') { SIMPL_TOKEN(HDW_AT, NULL); }
+		else if (current == '#') { SIMPL_TOKEN(HDW_HASH, NULL); }
+		else if (current == '^') { SIMPL_TOKEN(HDW_CARET, NULL); }
+		else if (current == '~') { SIMPL_TOKEN(HDW_TILDE, NULL); }
+		else if (current == '?') { SIMPL_TOKEN(HDW_QUERY, NULL); }
+		else if (current == '`') { SIMPL_TOKEN(HDW_GRAVE, NULL); }
 		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
 		else {
 			char *msg = (char *) malloc(256 * sizeof(char));
