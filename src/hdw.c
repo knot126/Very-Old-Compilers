@@ -31,6 +31,22 @@ static char *hdw_strndup(const char * const src, size_t max) {
 	return string;
 }
 
+static bool hdw_isdigit(char what) {
+	return (what >= '0' && what <= '9');
+}
+
+static bool hdw_isradix(char what) {
+	return (what == '.');
+}
+
+static bool hdw_isalpha(char what) {
+	return ((what >= 'a' && what <= 'z') || (what >= 'A' && what <= 'Z') || what == '_');
+}
+
+static bool hdw_isalphanumeric(char what) {
+	return (hdw_isalpha(what) || hdw_isdigit(what));
+}
+
 // =============================================================================
 // Script Instance Management
 // =============================================================================
@@ -71,27 +87,67 @@ static void hdw_freetokens(hdw_tokenarray *array) {
 	free(array->tokens);
 }
 
-static int32_t hdw_addtoken(hdw_tokenarray * const array, const uint16_t type, const char *name, const uint32_t line, const uint16_t col) {
+static int32_t hdw_addtoken(hdw_tokeniser * const tokeniser, const uint16_t type, const char *name) {
 	/**
 	 * Adds a token to the list at array.
 	 */
 	
-	array->count++;
-	array->tokens = realloc(array->tokens, sizeof(hdw_tokenarray) * array->count);
+	tokeniser->tokens->count++;
+	tokeniser->tokens->tokens = realloc(tokeniser->tokens->tokens, sizeof(hdw_tokenarray) * tokeniser->tokens->count);
 	
-	if (!array->tokens) {
+	if (!tokeniser->tokens->tokens) {
 		return -1;
 	}
 	
-	array->tokens[array->count - 1].name = name;
-	array->tokens[array->count - 1].line = line;
-	array->tokens[array->count - 1].col = col;
-	array->tokens[array->count - 1].type = type;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].name = name;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].line = tokeniser->line;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].col = tokeniser->col;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].type = type;
 	
 	return 0;
 }
 
-static bool hdw_endtoken(hdw_tokeniser *tokeniser) {
+static int32_t hdw_addinttoken(hdw_tokeniser * const tokeniser, const int64_t value) {
+	/**
+	 * Adds a integer token to the list of tokens.
+	 */
+	
+	tokeniser->tokens->count++;
+	tokeniser->tokens->tokens = realloc(tokeniser->tokens->tokens, sizeof(hdw_tokenarray) * tokeniser->tokens->count);
+	
+	if (!tokeniser->tokens->tokens) {
+		return -1;
+	}
+	
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].int_value = value;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].line = tokeniser->line;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].col = tokeniser->col;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].type = HDW_INTEGER;
+	
+	return 0;
+}
+
+static int32_t hdw_adddectoken(hdw_tokeniser * const tokeniser, const double value) {
+	/**
+	 * Adds a decimal token to the list of tokens.
+	 */
+	
+	tokeniser->tokens->count++;
+	tokeniser->tokens->tokens = realloc(tokeniser->tokens->tokens, sizeof(hdw_tokenarray) * tokeniser->tokens->count);
+	
+	if (!tokeniser->tokens->tokens) {
+		return -1;
+	}
+	
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].dec_value = value;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].line = tokeniser->line;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].col = tokeniser->col;
+	tokeniser->tokens->tokens[tokeniser->tokens->count - 1].type = HDW_NUMBER;
+	
+	return 0;
+}
+
+static bool hdw_endtoken(hdw_tokeniser * const tokeniser) {
 	if (tokeniser->code[tokeniser->head] == '\0') {
 		return true;
 	}
@@ -99,14 +155,27 @@ static bool hdw_endtoken(hdw_tokeniser *tokeniser) {
 	return false;
 }
 
-static char hdw_peektoken(hdw_tokeniser *tokeniser) {
+static char hdw_peektoken(hdw_tokeniser * const tokeniser) {
 	return tokeniser->code[tokeniser->head];
 }
 
-static char hdw_advancetoken(const char * const code, size_t * const head) {
-	char v = code[*head];
-	*head += 1;
+static char hdw_peektoken2(hdw_tokeniser * const tokeniser) {
+	return tokeniser->code[tokeniser->head + 1];
+}
+
+static char hdw_advancetoken(hdw_tokeniser * const tokeniser) {
+	/**
+	 * Return a token and then advance the head.
+	 */
+	
+	char v = tokeniser->code[tokeniser->head];
+	tokeniser->head += 1;
+	tokeniser->col += 1;
 	return v;
+}
+
+static void hdw_newlinetoken(hdw_tokeniser * const tokeniser) {
+	
 }
 
 static bool hdw_matchtoken(const char * const code, size_t * const head, char what) {
@@ -131,20 +200,82 @@ static bool hdw_stringtoken(hdw_tokeniser *tokeniser) {
 	
 	size_t start = (tokeniser->head);
 	
-	while (hdw_advancetoken(tokeniser->code, &tokeniser->head) != '"' && !hdw_endtoken(tokeniser));
+	while (hdw_advancetoken(tokeniser) != '"' && !hdw_endtoken(tokeniser));
 	
 	if (hdw_endtoken(tokeniser)) {
 		return true;
 	}
 	
-	size_t last = (tokeniser->head) - 1;
+	size_t end = (tokeniser->head) - 1;
 	
-	hdw_addtoken(tokeniser->tokens, HDW_STRING, hdw_strndup(&tokeniser->code[start], last - start), 0, 0);
+	hdw_addtoken(tokeniser, HDW_STRING, hdw_strndup(&tokeniser->code[start], end - start));
 	
 	return false;
 }
 
-#define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(tokeniser.tokens, TYPE, NAME, tokeniser.line, tokeniser.col)
+static bool hdw_numbertoken(hdw_tokeniser * const tokeniser) {
+	/**
+	 * This function will handle number tokens (Floating or Integer).
+	 */
+	
+	bool is_integer = true;
+	size_t start = (tokeniser->head) - 1;
+	
+	// handle more digits
+	while (hdw_isdigit(hdw_peektoken(tokeniser))) {
+		hdw_advancetoken(tokeniser);
+	}
+	
+	// handle decimal point in number
+	if (hdw_isradix(hdw_peektoken(tokeniser)) && hdw_isdigit(hdw_peektoken2(tokeniser))) {
+		is_integer = false;
+		hdw_advancetoken(tokeniser);
+		
+		while (hdw_isdigit(hdw_peektoken(tokeniser))) {
+			hdw_advancetoken(tokeniser);
+		}
+	}
+	
+	size_t end = (tokeniser->head);
+	
+	// add token based on if its a float or integer
+	char *s = hdw_strndup(&tokeniser->code[start], end - start);
+	if (!s) { return true; }
+	
+	if (is_integer) {
+		int64_t n = atoll(s);
+		hdw_addinttoken(tokeniser, n);
+	}
+	else {
+		double n = strtod(s, NULL);
+		hdw_adddectoken(tokeniser, n);
+	}
+	
+	free(s);
+	
+	return false;
+}
+
+static bool hdw_symboltoken(hdw_tokeniser * const tokeniser) {
+	/**
+	 * Handle a token that starts alpha character then runs until the end of an
+	 * alphanumeric sequence
+	 */
+	
+	size_t start = (tokeniser->head) - 1;
+	
+	while (hdw_isalphanumeric(hdw_peektoken(tokeniser))) {
+		hdw_advancetoken(tokeniser);
+	}
+	
+	size_t end = (tokeniser->head);
+	
+	hdw_addtoken(tokeniser, HDW_SYMBOL, hdw_strndup(&tokeniser->code[start], end - start));
+	
+	return false;
+}
+
+#define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(&tokeniser, TYPE, NAME)
 #define MATCH(CHAR) hdw_matchtoken(tokeniser.code, &tokeniser.head, CHAR)
 
 int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens, const char * const code) {
@@ -167,7 +298,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 	while (tokeniser.head < tokeniser.len) {
 		// NOTE: Taking advantage of the postfix ++ operator returning the
 		// unicremented value first.
-		char current = hdw_advancetoken(tokeniser.code, &tokeniser.head);
+		char current = hdw_advancetoken(&tokeniser);
 		
 		// Matching simple tokens //
 		/* Parenthesis */
@@ -212,6 +343,14 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 				}
 			}
 		}
+		else if (hdw_isdigit(current)) {
+			hdw_numbertoken(&tokeniser);
+			// TODO: Proper error checking here
+		}
+		else if (hdw_isalpha(current)) {
+			hdw_symboltoken(&tokeniser);
+			// TODO: Proper error checking here
+		}
 		/* Misc */
 		else if (current == ';') { SIMPL_TOKEN(HDW_SEMI, NULL); }
 		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
@@ -225,7 +364,6 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		}
 		
 		if (current == '\n') { tokeniser.line++; tokeniser.col = 0; }
-		tokeniser.col++;
 	}
 	
 	return tokeniser.error;
@@ -273,11 +411,18 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 	}
 	
 	for (size_t i = 0; i < tokens.count; i++) {
-		printf("%.3d @ (line=%d, col=%d) = %s\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].name ? tokens.tokens[i].name : "<NULL>");
+		if (tokens.tokens[i].type == HDW_INTEGER) {
+			printf("%.3d @ (line=%d, col=%d) = %d\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].int_value);
+		}
+		else if (tokens.tokens[i].type == HDW_NUMBER) {
+			printf("%.3d @ (line=%d, col=%d) = %f\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].dec_value);
+		}
+		else {
+			printf("%.3d @ (line=%d, col=%d) = %s\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].name ? tokens.tokens[i].name : "<NULL>");
+		}
 	}
 	
 	hdw_freetokens(&tokens);
-	//script->errmsg = "Feature is not supported.";
 	
 	// handle temporary script cleanup
 	if (script_temp) {

@@ -74,7 +74,11 @@ enum {
 };
 
 typedef struct hdw_token {
-	const char *name;   // Text of the token
+	union {
+		const char *name;   // Text of the token
+		double dec_value;
+		int64_t int_value;
+	};
 	uint32_t line;      // The line the token is on
 	uint16_t col;       // The column of the token
 	uint16_t type;      // The type the token is
