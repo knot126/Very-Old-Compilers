@@ -12,6 +12,10 @@
 // =============================================================================
 
 static char *hdw_strndup(const char * const src, size_t max) {
+	/**
+	 * Self-made implementation of the C23/POSIX function by a similar name, strndup.
+	 */
+	
 	size_t len = 0;
 	
 	while (len < max && src[len] != '\0') {
@@ -45,6 +49,16 @@ static bool hdw_isalpha(char what) {
 
 static bool hdw_isalphanumeric(char what) {
 	return (hdw_isalpha(what) || hdw_isdigit(what));
+}
+
+static uint16_t hdw_findkeyword(const size_t size, const hdw_keywordmap * const map, const char * const key) {
+	for (size_t i = 0; i < size; i++) {
+		if (!strcmp(map[i].key, key)) {
+			return map[i].value;
+		}
+	}
+	
+	return HDW_UNKNOWN;
 }
 
 // =============================================================================
@@ -148,6 +162,10 @@ static int32_t hdw_adddectoken(hdw_tokeniser * const tokeniser, const double val
 }
 
 static bool hdw_endtoken(hdw_tokeniser * const tokeniser) {
+	/**
+	 * Returns true if the next unconsumed is the end token, or false if is not.
+	 */
+	
 	if (tokeniser->code[tokeniser->head] == '\0') {
 		return true;
 	}
@@ -156,10 +174,22 @@ static bool hdw_endtoken(hdw_tokeniser * const tokeniser) {
 }
 
 static char hdw_peektoken(hdw_tokeniser * const tokeniser) {
+	/**
+	 * Look at the next token without consuming it.
+	 */
+	
 	return tokeniser->code[tokeniser->head];
 }
 
 static char hdw_peektoken2(hdw_tokeniser * const tokeniser) {
+	/**
+	 * Look at the next next token without consuming anything.
+	 *          ~
+	 * Ex:    A B C D E F G ...
+	 *            ^   ^- look here
+	 *            |_ you are here
+	 */
+	
 	return tokeniser->code[tokeniser->head + 1];
 }
 
@@ -175,7 +205,8 @@ static char hdw_advancetoken(hdw_tokeniser * const tokeniser) {
 }
 
 static void hdw_newlinetoken(hdw_tokeniser * const tokeniser) {
-	
+	tokeniser->line++;
+	tokeniser->col = 0;
 }
 
 static bool hdw_matchtoken(const char * const code, size_t * const head, char what) {
@@ -200,7 +231,11 @@ static bool hdw_stringtoken(hdw_tokeniser *tokeniser) {
 	
 	size_t start = (tokeniser->head);
 	
-	while (hdw_advancetoken(tokeniser) != '"' && !hdw_endtoken(tokeniser));
+	while (hdw_advancetoken(tokeniser) != '"' && !hdw_endtoken(tokeniser)) {
+		if (hdw_peektoken(tokeniser) == '\n') {
+			hdw_newlinetoken(tokeniser);
+		}
+	}
 	
 	if (hdw_endtoken(tokeniser)) {
 		return true;
@@ -240,7 +275,9 @@ static bool hdw_numbertoken(hdw_tokeniser * const tokeniser) {
 	
 	// add token based on if its a float or integer
 	char *s = hdw_strndup(&tokeniser->code[start], end - start);
-	if (!s) { return true; }
+	if (!s) {
+		return true;
+	}
 	
 	if (is_integer) {
 		int64_t n = atoll(s);
@@ -262,6 +299,13 @@ static bool hdw_symboltoken(hdw_tokeniser * const tokeniser) {
 	 * alphanumeric sequence
 	 */
 	
+	const hdw_keywordmap keywords[] = {
+		{"struct", HDW_STRUCT},
+		{"class", HDW_CLASS},
+		{"function", HDW_FUNCTION},
+		{"if", HDW_IF},
+	};
+	
 	size_t start = (tokeniser->head) - 1;
 	
 	while (hdw_isalphanumeric(hdw_peektoken(tokeniser))) {
@@ -270,7 +314,21 @@ static bool hdw_symboltoken(hdw_tokeniser * const tokeniser) {
 	
 	size_t end = (tokeniser->head);
 	
-	hdw_addtoken(tokeniser, HDW_SYMBOL, hdw_strndup(&tokeniser->code[start], end - start));
+	char *s = hdw_strndup(&tokeniser->code[start], end - start);
+	
+	if (!s) {
+		return true;
+	}
+	
+	uint16_t kw = hdw_findkeyword(sizeof(keywords) / sizeof(hdw_keywordmap), keywords, s);
+	
+	if (!kw) {
+		hdw_addtoken(tokeniser, HDW_SYMBOL, s);
+	}
+	else {
+		hdw_addtoken(tokeniser, kw, NULL);
+		free(s);
+	}
 	
 	return false;
 }
@@ -289,7 +347,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		.len = strlen((char *) code),
 		.head = 0,
 		.line = 1,
-		.col = 1,
+		.col = 0,
 		.error = 0,
 	};
 	
@@ -363,7 +421,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 			}
 		}
 		
-		if (current == '\n') { tokeniser.line++; tokeniser.col = 0; }
+		if (current == '\n') { hdw_newlinetoken(&tokeniser); }
 	}
 	
 	return tokeniser.error;

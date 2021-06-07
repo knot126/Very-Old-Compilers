@@ -99,6 +99,11 @@ typedef struct hdw_tokeniser {
 	int32_t error;            // Number of errors in session
 } hdw_tokeniser;
 
+typedef struct hdw_keywordmap {
+	const char * const key;  // The string of the type
+	uint16_t value;          // The correspoding value of the type
+} hdw_keywordmap;
+
 // =============================================================================
 // Errors
 // =============================================================================
