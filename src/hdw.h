@@ -7,7 +7,10 @@
 typedef size_t hdw_size_t; // Unused for now
 typedef int32_t hdw_int_t; // Unused for now
 
+// =============================================================================
 // Tokeniser
+// =============================================================================
+
 enum {
 	HDW_UNKNOWN = 0,
 	
@@ -103,6 +106,32 @@ typedef struct hdw_keywordmap {
 	const char * const key;  // The string of the type
 	uint16_t value;          // The correspoding value of the type
 } hdw_keywordmap;
+
+// =============================================================================
+// Parser
+// =============================================================================
+
+enum {
+	HDW_DEFAULT = 0,
+	HDW_ROOT = 1,
+	HDW_VARIABLE = 5,
+};
+
+typedef struct hdw_treenode {
+	struct hdw_treenode *children;
+	uint32_t children_count;
+	uint32_t type;
+	union {
+		double as_number;
+		int64_t as_integer;
+		char *as_string;
+	};
+} hdw_treenode;
+
+typedef struct hdw_parser {
+	hdw_treenode *root;
+	size_t head;
+} hdw_parser;
 
 // =============================================================================
 // Errors

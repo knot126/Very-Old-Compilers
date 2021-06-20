@@ -341,6 +341,20 @@ static bool hdw_symboltoken(hdw_tokeniser * const tokeniser) {
 	return false;
 }
 
+static void hdw_printtokens(hdw_tokenarray *tokens) {
+	for (size_t i = 0; i < tokens->count; i++) {
+		if (tokens->tokens[i].type == HDW_INTEGER) {
+			printf("%.3d @ (line=%d, col=%d) = %d\n", tokens->tokens[i].type, tokens->tokens[i].line, tokens->tokens[i].col, tokens->tokens[i].int_value);
+		}
+		else if (tokens->tokens[i].type == HDW_NUMBER) {
+			printf("%.3d @ (line=%d, col=%d) = %f\n", tokens->tokens[i].type, tokens->tokens[i].line, tokens->tokens[i].col, tokens->tokens[i].dec_value);
+		}
+		else {
+			printf("%.3d @ (line=%d, col=%d) = %s\n", tokens->tokens[i].type, tokens->tokens[i].line, tokens->tokens[i].col, tokens->tokens[i].name ? tokens->tokens[i].name : "<NULL>");
+		}
+	}
+}
+
 #define SIMPL_TOKEN(TYPE, NAME) hdw_addtoken(&tokeniser, TYPE, NAME)
 #define MATCH(CHAR) hdw_matchtoken(tokeniser.code, &tokeniser.head, CHAR)
 
@@ -435,6 +449,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		else if (current == '~') { SIMPL_TOKEN(HDW_TILDE, NULL); }
 		else if (current == '?') { SIMPL_TOKEN(HDW_QUERY, NULL); }
 		else if (current == '`') { SIMPL_TOKEN(HDW_GRAVE, NULL); }
+		else if (current == '.') { SIMPL_TOKEN(HDW_DOT, NULL); }
 		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
 		else {
 			char *msg = (char *) malloc(256 * sizeof(char));
@@ -455,6 +470,85 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 #undef SIMPL_TOKEN
 
 // =============================================================================
+// Parser
+// =============================================================================
+
+static hdw_treenode hdw_treenodealloc(size_t children) {
+	/**
+	 * Allocate a tree node and subnodes of size children.
+	 */
+	
+	hdw_treenode tn = { .children = 0, .children_count = 0, .type = 0, .as_integer = 0 };
+	
+	tn.children = (hdw_treenode *) malloc(children * sizeof(hdw_treenode));
+	
+	if (!tn.children) {
+		return tn;
+	}
+	
+	tn.children_count = children;
+	
+	return tn;
+}
+
+static void hdw_treefree(hdw_treenode *tree) {
+	/**
+	 * Free a tree node and all of its children if they are allocated.
+	 */
+	
+	for (size_t i = 0; i < tree->children_count; i++) {
+		hdw_treefree(&tree->children[i]);
+	}
+	
+	if (tree->children) {
+		free(tree->children);
+	}
+}
+
+static void hdw_treenodeprint(hdw_treenode *node, int stack) {
+	/**
+	 * Print a tree node and all of its subtrees.
+	 */
+	
+	for (int i = 0; i < stack; i++) {
+		printf("\t");
+	}
+	
+	printf("(%d = <%x> -> ", node->type, node->as_string);
+	
+	bool sub = false;
+	
+	for (size_t i = 0; i < node->children_count; i++) {
+		printf("\n");
+		hdw_treenodeprint(&node->children[i], stack + 1);
+		sub = true;
+	}
+	
+	if (sub) {
+		for (int i = 0; i < stack; i++) {
+			printf("\t");
+		}
+	}
+	
+	printf(")\n", node->type, node->as_string);
+}
+
+int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode * const restrict tree, const hdw_tokenarray * const restrict tokens) {
+	/**
+	 * Parse a sequence of tokens into an abstract syntax tree.
+	 */
+	
+	hdw_parser parser = {
+		.root = tree,
+		.head = 0,
+	};
+	
+	memset(tree, 0, sizeof(hdw_treenode));
+	
+	return 0;
+}
+
+// =============================================================================
 // Codeblock Execution
 // =============================================================================
 
@@ -467,6 +561,7 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 	 */
 	
 	hdw_tokenarray tokens;
+	hdw_treenode tree;
 	
 	// handle code == NULL
 	if (!code) {
@@ -488,23 +583,31 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 	
 	if (status) {
 		hdw_freetokens(&tokens);
-		if (script_temp) { hdw_destroy(script); }
+		
+		if (script_temp) {
+			hdw_destroy(script);
+		}
+		
 		return -3;
 	}
 	
-	for (size_t i = 0; i < tokens.count; i++) {
-		if (tokens.tokens[i].type == HDW_INTEGER) {
-			printf("%.3d @ (line=%d, col=%d) = %d\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].int_value);
-		}
-		else if (tokens.tokens[i].type == HDW_NUMBER) {
-			printf("%.3d @ (line=%d, col=%d) = %f\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].dec_value);
-		}
-		else {
-			printf("%.3d @ (line=%d, col=%d) = %s\n", tokens.tokens[i].type, tokens.tokens[i].line, tokens.tokens[i].col, tokens.tokens[i].name ? tokens.tokens[i].name : "<NULL>");
-		}
-	}
+	hdw_printtokens(&tokens);
+	
+	status = hdw_parse(script, &tree, &tokens);
 	
 	hdw_freetokens(&tokens);
+	
+	if (status) {
+		hdw_treefree(&tree);
+		
+		if (script_temp) {
+			hdw_destroy(script);
+		}
+		
+		return HDW_ERR_PARSER;
+	}
+	
+	hdw_treefree(&tree);
 	
 	// handle temporary script cleanup
 	if (script_temp) {
