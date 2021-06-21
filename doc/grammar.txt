@@ -1,9 +1,27 @@
 === Honeydew Grammar ===
 
-e6 -> number | string | 'true' | 'false' | 'nil' | '(' e0 ')' ;
-e5 -> ('-' || '!') e5 | e6;
-e4 -> e5 ( ('*' || '/') e5 ) ... ;
-e3 -> e4 ( ('+' || '-') e4 ) ... ;
-e2 -> e3 ( ('>' || '>=' || '<' || '<=') e3 ) ... ;
-e1 -> e2 ( ('==' || '!=') e2 ) ... ;
-e0 -> e1 ;
+-- NOTE: If viewing in kate, try setting syntax highlihgting to Lua, it works
+--       best that way.
+
+ExpressionLevel6:
+	-- Primary expression
+	NUMBER | STRING | keyword "true" | keyword "false" | keyword "null" | '(' Expression ')'
+
+ExpressionLevel5:
+	-- Remember that Level5 is recursive, since !(!(true)) can be an expression.
+	( ('-' || '!') ExpressionLevel5 ) | ExpressionLevel6
+
+ExpressionLevel4:
+	ExpressionLevel5 ( ('*' || '/') ExpressionLevel5 ) ...
+
+ExpressionLevel3:
+	ExpressionLevel4 ( ('+' || '-') ExpressionLevel4 ) ...
+
+ExpressionLevel2:
+	ExpressionLevel3 ( ('>' || '>=' || '<' || '<=') ExpressionLevel3 ) ...
+
+ExpressionLevel1:
+	ExpressionLevel2 ( ('==' || '!=') ExpressionLevel2 ) ...
+
+Expression:
+	ExpressionLevel1
