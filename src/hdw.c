@@ -473,20 +473,91 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 // Parser
 // =============================================================================
 
-static hdw_treenode hdw_treenodealloc(size_t children) {
+static hdw_treenode *hdw_treeAlloc(size_t size) {
 	/**
 	 * Allocate a tree node and subnodes of size children.
 	 */
 	
-	hdw_treenode tn = { .children = 0, .children_count = 0, .type = 0, .as_integer = 0 };
+	hdw_treenode *tn = (hdw_treenode *) malloc(sizeof *tn);
 	
-	tn.children = (hdw_treenode *) malloc(children * sizeof(hdw_treenode));
-	
-	if (!tn.children) {
-		return tn;
+	if (!tn) {
+		return NULL;
 	}
 	
-	tn.children_count = children;
+	*tn = (hdw_treenode) {
+		.children = 0,
+		.children_count = size,
+		.type = 0,
+		.as_integer = 0,
+	};
+	
+	if (size > 0) {
+		tn->children = (hdw_treenode *) malloc(sizeof *tn->children * size);
+		
+		if (!tn->children) {
+			free(tn);
+			return NULL;
+		}
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_treeBinary(uint32_t type, hdw_treenode *left, hdw_treenode *right) {
+	/**
+	 * Allocate a tree node that is binary and set its type.
+	 */
+	
+	hdw_treenode *tn = hdw_treeAlloc(2);
+	
+	if (!tn) {
+		return NULL;
+	}
+	
+	tn->type = type;
+	tn->children[0] = *left;
+	tn->children[1] = *right;
+	
+	// Free left and right since their memory is not needed anymore
+	free(left);
+	free(right);
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_treeSingle(uint32_t type, hdw_treenode *node) {
+	/**
+	 * Allocate a tree node that is binary and set its type.
+	 */
+	
+	hdw_treenode *tn = hdw_treeAlloc(1);
+	
+	if (!tn) {
+		return NULL;
+	}
+	
+	tn->type = type;
+	tn->children[0] = *node;
+	
+	// Free left and right since their memory is not needed anymore
+	free(node);
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_treeFromToken(hdw_token token) {
+	/**
+	 * Allocate a tree node that is binary and set its type.
+	 */
+	
+	hdw_treenode *tn = hdw_treeAlloc(0);
+	
+	if (!tn) {
+		return NULL;
+	}
+	
+	tn->type = token.type;
+	tn->as_integer = token.int_value;
 	
 	return tn;
 }
@@ -509,6 +580,10 @@ static void hdw_treenodeprint(hdw_treenode *node, int stack) {
 	/**
 	 * Print a tree node and all of its subtrees.
 	 */
+	
+	if (!node) {
+		return;
+	}
 	
 	for (int i = 0; i < stack; i++) {
 		printf("\t");
@@ -533,17 +608,154 @@ static void hdw_treenodeprint(hdw_treenode *node, int stack) {
 	printf(")\n", node->type, node->as_string);
 }
 
-int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode * const restrict tree, const hdw_tokenarray * const restrict tokens) {
+#define HDW_CURRENT parser->tokens->tokens[parser->head]
+
+static void hdw_parseError(hdw_parser * const restrict parser, char * restrict message) {
+	printf("Parser error (Line %d, Column %d): %s.\n", HDW_CURRENT.line, HDW_CURRENT.col, message);
+}
+
+static hdw_treenode *hdw_Expression(hdw_parser * const restrict);
+
+static hdw_treenode *hdw_ExpressionLevel6(hdw_parser * const restrict parser) {
+	hdw_tokentype type = HDW_CURRENT.type;
+	
+	if (type == HDW_FALSE || type == HDW_TRUE || type == HDW_NULL || type == HDW_STRING || type == HDW_NUMBER || type == HDW_INTEGER) {
+		hdw_treenode *a = hdw_treeFromToken(HDW_CURRENT);
+		parser->head++;
+		return a;
+	}
+	
+	if (type == HDW_PARL) {
+		parser->head++;
+		hdw_treenode *a = hdw_Expression(parser);
+		if (HDW_CURRENT.type != HDW_PARE) {
+			hdw_treefree(a);
+			hdw_parseError(parser, "Expected closing ')' but did not find it.");
+			return NULL;
+		}
+		return hdw_treeSingle(HDW_EXPR, a);
+	}
+	
+	hdw_parseError(parser, "Invalid expression.");
+	return NULL;
+}
+
+static hdw_treenode *hdw_ExpressionLevel5(hdw_parser * const restrict parser) {
+	if (HDW_CURRENT.type == HDW_NOT || HDW_CURRENT.type == HDW_MINUS) {
+		// Get type
+		hdw_tokentype type = HDW_CURRENT.type;
+		
+		// Push up head
+		parser->head++;
+		
+		// Do the right expression
+		hdw_treenode *node = hdw_ExpressionLevel5(parser);
+		
+		// Create the tree
+		return hdw_treeSingle(type, node);
+	}
+	
+	return hdw_ExpressionLevel6(parser);
+}
+
+static hdw_treenode *hdw_ExpressionLevel4(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_ExpressionLevel5(parser);
+	
+	while (HDW_CURRENT.type == HDW_ASTRESK || HDW_CURRENT.type == HDW_BACK) {
+		// Get type
+		hdw_tokentype type = HDW_CURRENT.type;
+		
+		// Push up head
+		parser->head++;
+		
+		// Do the right expression
+		hdw_treenode *right = hdw_ExpressionLevel5(parser);
+		
+		// Create the tree
+		tn = hdw_treeBinary(type, tn, right);
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_ExpressionLevel3(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_ExpressionLevel4(parser);
+	
+	while (HDW_CURRENT.type == HDW_PLUS || HDW_CURRENT.type == HDW_MINUS) {
+		// Get type
+		hdw_tokentype type = HDW_CURRENT.type;
+		
+		// Push up head
+		parser->head++;
+		
+		// Do the right expression
+		hdw_treenode *right = hdw_ExpressionLevel4(parser);
+		
+		// Create the tree
+		tn = hdw_treeBinary(type, tn, right);
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_ExpressionLevel2(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_ExpressionLevel3(parser);
+	
+	while (HDW_CURRENT.type == HDW_LT || HDW_CURRENT.type == HDW_GT || HDW_CURRENT.type == HDW_LTEQ || HDW_CURRENT.type == HDW_LTEQ) {
+		// Get type
+		hdw_tokentype type = HDW_CURRENT.type;
+		
+		// Push up head
+		parser->head++;
+		
+		// Do the right expression
+		hdw_treenode *right = hdw_ExpressionLevel3(parser);
+		
+		// Create the tree
+		tn = hdw_treeBinary(type, tn, right);
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_ExpressionLevel2(parser);
+	
+	while (HDW_CURRENT.type == HDW_EQ || HDW_CURRENT.type == HDW_NOTEQ) {
+		// Get type
+		hdw_tokentype type = HDW_CURRENT.type;
+		
+		// Push up head
+		parser->head++;
+		
+		// Do the right expression
+		hdw_treenode *right = hdw_ExpressionLevel2(parser);
+		
+		// Create the tree
+		tn = hdw_treeBinary(type, tn, right);
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_Expression(hdw_parser * const restrict parser) {
+	return hdw_ExpressionLevel1(parser);
+}
+
+#undef HDW_CURRENT
+
+int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode ** const restrict tree, const hdw_tokenarray * const restrict tokens) {
 	/**
 	 * Parse a sequence of tokens into an abstract syntax tree.
 	 */
 	
 	hdw_parser parser = {
-		.root = tree,
+		.root = *tree,
 		.head = 0,
+		.tokens = tokens,
 	};
 	
-	memset(tree, 0, sizeof(hdw_treenode));
+	*tree = hdw_Expression(&parser);
 	
 	return 0;
 }
@@ -561,7 +773,7 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 	 */
 	
 	hdw_tokenarray tokens;
-	hdw_treenode tree;
+	hdw_treenode *tree;
 	
 	// handle code == NULL
 	if (!code) {
@@ -591,14 +803,16 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 		return -3;
 	}
 	
-	hdw_printtokens(&tokens);
+	//hdw_printtokens(&tokens);
 	
 	status = hdw_parse(script, &tree, &tokens);
+	
+	hdw_treenodeprint(tree, 0);
 	
 	hdw_freetokens(&tokens);
 	
 	if (status) {
-		hdw_treefree(&tree);
+		hdw_treefree(tree);
 		
 		if (script_temp) {
 			hdw_destroy(script);
@@ -607,7 +821,7 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 		return HDW_ERR_PARSER;
 	}
 	
-	hdw_treefree(&tree);
+	hdw_treefree(tree);
 	
 	// handle temporary script cleanup
 	if (script_temp) {

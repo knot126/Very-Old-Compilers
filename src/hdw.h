@@ -73,8 +73,13 @@ enum {
 	HDW_FALSE,    // 'false'
 	HDW_NULL,     // 'null'
 	
+	HDW_EXPR,     // '(' expression ')'
 	HDW_FEND,     // eof
 };
+
+typedef uint16_t hdw_tokentype;
+typedef uint16_t hdw_colcount;
+typedef uint32_t hdw_linecount;
 
 typedef struct hdw_token {
 	union {
@@ -82,9 +87,9 @@ typedef struct hdw_token {
 		double dec_value;
 		int64_t int_value;
 	};
-	uint32_t line;      // The line the token is on
-	uint16_t col;       // The column of the token
-	uint16_t type;      // The type the token is
+	hdw_linecount line;      // The line the token is on
+	hdw_colcount col;       // The column of the token
+	hdw_tokentype type;      // The type the token is
 } hdw_token;
 
 typedef struct hdw_tokenarray {
@@ -119,17 +124,18 @@ enum {
 
 typedef struct hdw_treenode {
 	struct hdw_treenode *children;
-	uint32_t children_count;
-	uint32_t type;
 	union {
 		double as_number;
 		int64_t as_integer;
 		char *as_string;
 	};
+	uint32_t children_count;
+	uint32_t type;
 } hdw_treenode;
 
 typedef struct hdw_parser {
 	hdw_treenode *root;
+	const hdw_tokenarray * const tokens;
 	size_t head;
 } hdw_parser;
 
