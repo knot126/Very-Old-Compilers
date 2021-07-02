@@ -23,8 +23,17 @@ ExpressionLevel2:
 ExpressionLevel1:
 	ExpressionLevel2 ( ('==' || '!=') ExpressionLevel2 ) ...
 
+ExpressionLevel0:
+	ExpressionLevel1 ( '?' ExpressionLevel0 ':' ExpressionLevel0 ) ...
+
 Expression:
-	ExpressionLevel1 ( ',' Expression ) ...
+	ExpressionLevel0 ( ',' Expression ) ...
+
+StatementLevel1:
+	FunctionCall '(' Expression (',' Expression) ... ')'
+
+StatementLevel0:
+	StatementLevel1
 
 Statement:
-	Expression ';' ( Statement ) ...
+	( Expression || StatementLevel0 ) ';' ( Statement ) ...

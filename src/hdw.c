@@ -465,6 +465,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		}
 		/* Misc */
 		else if (current == ';') { SIMPL_TOKEN(HDW_SEMI, NULL); }
+		else if (current == ':') { SIMPL_TOKEN(HDW_COLON, NULL); }
 		else if (current == ',') { SIMPL_TOKEN(HDW_COMMA, NULL); }
 		else if (current == '@') { SIMPL_TOKEN(HDW_AT, NULL); }
 		else if (current == '#') { SIMPL_TOKEN(HDW_HASH, NULL); }
@@ -522,6 +523,30 @@ static hdw_treenode *hdw_treeAlloc(size_t size) {
 			return NULL;
 		}
 	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_treeTrinary(uint32_t type, hdw_treenode *a, hdw_treenode *b, hdw_treenode *c) {
+	/**
+	 * Allocate a tree node that is trinary and set its type.
+	 */
+	
+	hdw_treenode *tn = hdw_treeAlloc(3);
+	
+	if (!tn) {
+		return NULL;
+	}
+	
+	tn->type = type;
+	tn->children[0] = *a;
+	tn->children[1] = *b;
+	tn->children[2] = *c;
+	
+	// Free left and right since their memory is not needed anymore
+	free(a);
+	free(b);
+	free(c);
 	
 	return tn;
 }
@@ -750,7 +775,7 @@ static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
 		hdw_tokentype type = HDW_CURRENT.type;
 		
 		// Push up head
-		parser->head++;
+		parser->head += 2;
 		
 		// Do the right expression
 		hdw_treenode *right = hdw_ExpressionLevel2(parser);
@@ -762,13 +787,36 @@ static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
 	return tn;
 }
 
-static hdw_treenode *hdw_Expression(hdw_parser * const restrict parser) {
+static hdw_treenode *hdw_ExpressionLevel0(hdw_parser * const restrict parser) {
 	hdw_treenode *tn = hdw_ExpressionLevel1(parser);
+	
+	while (HDW_CURRENT.type == HDW_QUERY) {
+		parser->head++;
+		
+		hdw_treenode *b = hdw_ExpressionLevel0(parser);
+		
+		if (HDW_CURRENT.type != HDW_COLON) {
+			hdw_parseError(parser, "Expected matching ':' for '?' in ternary operator.");
+			return NULL;
+		}
+		
+		parser->head++;
+		
+		hdw_treenode *c = hdw_ExpressionLevel0(parser);
+		
+		tn = hdw_treeTrinary(HDW_TERNARY, tn, b, c);
+	}
+	
+	return tn;
+}
+
+static hdw_treenode *hdw_Expression(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_ExpressionLevel0(parser);
 	
 	while (HDW_CURRENT.type == HDW_COMMA) {
 		parser->head++;
 		
-		hdw_treenode *right = hdw_ExpressionLevel1(parser);
+		hdw_treenode *right = hdw_Expression(parser);
 		
 		tn = hdw_treeBinary(HDW_EXPRGRP, tn, right);
 	}

@@ -46,6 +46,7 @@ enum {
 	HDW_FORWARD, // '\'
 	HDW_AMP,   // &
 	HDW_SEMI,  // ;
+	HDW_COLON, // :
 	HDW_AT,    // @
 	HDW_HASH,  // #
 	HDW_CARET, // ^
@@ -82,6 +83,7 @@ enum {
 	
 	HDW_EXPR,     // '(' expression ')'
 	HDW_EXPRGRP,  // Group of expressions
+	HDW_TERNARY,  // ?: operator
 	HDW_FEND,     // eof
 };
 
