@@ -1,3 +1,26 @@
+/**
+ * Honeydew - Main File
+ * ====================
+ * 
+ * Copyright (C) 2021 Decent Games
+ * -------------------------------
+ * 
+ * NOTE: This is my first attempt at creating an interpreter, and it's not gone
+ * exremely well. Hopefully you understand :)
+ * 
+ * This is the main file that implements the Honeydew interpreter. It is
+ * organised, from top to bottom: 
+ * 
+ *   - Utilities: various tools that help with tasks needed throughout the \
+ *     language implementation.
+ *   - Instance Management: mangement of scripts
+ *   - Tokeniser: The lexical analysis part of the interpreter
+ *   - Parser: The part of the interpreter that creates the tree structures
+ *     (the IR).
+ *   - External Functions: functions that take care of running code strings and
+ *     files.
+ */
+
 #include <stdbool.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -609,6 +632,7 @@ static void hdw_treenodeprint(hdw_treenode *node, int stack) {
 }
 
 #define HDW_CURRENT parser->tokens->tokens[parser->head]
+#define HDW_GETTOKEN(OFFSET) parser->tokens->tokens[parser->head + OFFSET]
 
 static void hdw_parseError(hdw_parser * const restrict parser, char * restrict message) {
 	printf("Parser error (Line %d, Column %d): %s.\n", HDW_CURRENT.line, HDW_CURRENT.col, message);
@@ -721,7 +745,7 @@ static hdw_treenode *hdw_ExpressionLevel2(hdw_parser * const restrict parser) {
 static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
 	hdw_treenode *tn = hdw_ExpressionLevel2(parser);
 	
-	while (HDW_CURRENT.type == HDW_EQ || HDW_CURRENT.type == HDW_NOTEQ) {
+	while (HDW_CURRENT.type == HDW_EQ || HDW_GETTOKEN(1).type == HDW_NOTEQ) {
 		// Get type
 		hdw_tokentype type = HDW_CURRENT.type;
 		
@@ -739,7 +763,17 @@ static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
 }
 
 static hdw_treenode *hdw_Expression(hdw_parser * const restrict parser) {
-	return hdw_ExpressionLevel1(parser);
+	hdw_treenode *tn = hdw_ExpressionLevel1(parser);
+	
+	while (HDW_CURRENT.type == HDW_COMMA) {
+		parser->head++;
+		
+		hdw_treenode *right = hdw_ExpressionLevel1(parser);
+		
+		tn = hdw_treeBinary(HDW_EXPRGRP, tn, right);
+	}
+	
+	return tn;
 }
 
 #undef HDW_CURRENT

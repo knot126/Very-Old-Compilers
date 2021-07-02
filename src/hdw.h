@@ -1,3 +1,10 @@
+/**
+ * Honeydew - Main File
+ * ====================
+ * 
+ * Copyright (C) 2021 Decent Games
+ */
+
 #pragma once
 
 #include <stdbool.h>
@@ -74,6 +81,7 @@ enum {
 	HDW_NULL,     // 'null'
 	
 	HDW_EXPR,     // '(' expression ')'
+	HDW_EXPRGRP,  // Group of expressions
 	HDW_FEND,     // eof
 };
 
