@@ -155,17 +155,28 @@ typedef struct hdw_parser {
 } hdw_parser;
 
 // =============================================================================
-// Compiler
+// Interpreter
 // =============================================================================
 
-typedef struct hdw_codechunk {
-	uint8_t *data;
-	size_t length, available;
-} hdw_codechunk;
-
-typedef struct hdw_compiler {
+typedef struct hdw_interpreter {
 	
-} hdw_compiler;
+} hdw_interpreter;
+
+typedef struct hdw_value {
+	enum {
+		HDW_TYPE_NULL,
+		HDW_TYPE_BOOLEAN,
+		HDW_TYPE_NUMBER,
+		HDW_TYPE_INTEGER,
+		HDW_TYPE_STRING,
+	} type;
+	union {
+		bool as_boolean;
+		double as_number;
+		int64_t as_integer;
+		char *as_string;
+	};
+} hdw_value;
 
 // =============================================================================
 // Errors
@@ -177,6 +188,8 @@ enum hdw_retcode {
 	HDW_ERR_PRETOKENISER = -2,
 	HDW_ERR_TOKENISER = -3,
 	HDW_ERR_PARSER = -4,
+	HDW_ERR_INTERPRETER = -5,
+	
 };
 
 typedef struct hdw_error {
@@ -205,6 +218,8 @@ void hdw_destroy(hdw_script *c);
 // Low level
 // =============================================================================
 int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens, const char * const code);
+int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode ** const restrict tree, const hdw_tokenarray * const restrict tokens);
+int32_t hdw_interpret(const hdw_treenode * const restrict tree, hdw_value ** const restrict result);
 int32_t hdw_exec(hdw_script * restrict script, const char * const code);
 int32_t hdw_crexec(hdw_script ** restrict script, const char * const code);
 

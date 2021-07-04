@@ -58,15 +58,19 @@ int32_t hdw_exec(hdw_script * restrict script, const char * const code) {
 	
 	hdw_treenodeprint(tree, 0);
 	
+	hdw_value *result;
+	
+	status = hdw_interpret(tree, &result);
+	
 	if (status) {
-		hdw_treefree(tree);
-		
 		if (script_temp) {
 			hdw_destroy(script);
 		}
 		
-		return HDW_ERR_PARSER;
+		return status;
 	}
+	
+	hdw_printValue(result);
 	
 	hdw_treefree(tree);
 	

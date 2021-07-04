@@ -51,3 +51,31 @@ static uint16_t hdw_findkeyword(const size_t size, const hdw_keywordmap * const 
 	
 	return HDW_UNKNOWN;
 }
+
+static void hdw_printValue(hdw_value *value) {
+	if (!value) {
+		printf("SystemError\n");
+	}
+	
+	if (value->type == HDW_FALSE) {
+		printf("false\n");
+	}
+	else if (value->type == HDW_TRUE) {
+		printf("true\n");
+	}
+	else if (value->type == HDW_NULL) {
+		printf("null\n");
+	}
+	else if (value->type == HDW_STRING) {
+		printf("'%s'\n", value->as_string);
+	}
+	else if (value->type == HDW_NUMBER) {
+		printf("%f\n", value->as_number);
+	}
+	else if (value->type == HDW_INTEGER) {
+		printf("%lld\n", value->as_integer);
+	}
+	else {
+		printf("<Object: type %d at 0x%.16X>", value->type, value);
+	}
+}
