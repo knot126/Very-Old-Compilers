@@ -81,6 +81,11 @@ enum {
 	HDW_FALSE,    // 'false'
 	HDW_NULL,     // 'null'
 	
+	HDW_KWINT,    // 'int'
+	HDW_KWNUM,    // 'number'
+	HDW_KWSTR,    // 'string'
+	HDW_KWBOL,    // 'bool'
+	
 	HDW_EXPR,     // '(' expression ')'
 	HDW_EXPRGRP,  // Group of expressions
 	HDW_TERNARY,  // ?: operator
@@ -148,6 +153,19 @@ typedef struct hdw_parser {
 	const hdw_tokenarray * const tokens;
 	size_t head;
 } hdw_parser;
+
+// =============================================================================
+// Compiler
+// =============================================================================
+
+typedef struct hdw_codechunk {
+	uint8_t *data;
+	size_t length, available;
+} hdw_codechunk;
+
+typedef struct hdw_compiler {
+	
+} hdw_compiler;
 
 // =============================================================================
 // Errors
