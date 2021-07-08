@@ -48,12 +48,18 @@ static hdw_value *hdw_isTrue(hdw_treenode *input) {
 	if (input->type == HDW_FALSE) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
 	if (input->type == HDW_NULL) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
 	if (input->type == HDW_STRING && input->as_string[0] == '\0') return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
+	if (input->type == HDW_INTEGER && input->as_integer == 0) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
+	if (input->type == HDW_NUMBER && input->as_number == 0.0f) return hdw_newValue(HDW_TYPE_NUMBER, 0);
 	return hdw_newValue(HDW_TYPE_BOOLEAN, 1);
 }
 
 static hdw_value *hdw_not(hdw_value *val) {
 	val->as_boolean = !val->as_boolean;
 	return val;
+}
+
+static hdw_value *hdw_addExpressions() {
+	
 }
 
 static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
@@ -114,6 +120,38 @@ static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hd
 	// Urnary logical not
 	else if (tree->type == HDW_NOT && tree->children_count == 1) {
 		return hdw_not(hdw_isTrue(&tree->children[0]));
+	}
+	
+	// Binary Add
+	else if (tree->type == HDW_PLUS && tree->children_count == 2) {
+		if (tree->children[0].type == HDW_INTEGER) {
+			if (tree->children[1].type == HDW_INTEGER) {
+				return hdw_newValue(HDW_TYPE_INTEGER, tree->children[0].as_integer + tree->children[1].as_integer);
+			}
+			else if (tree->children[1].type == HDW_NUMBER) {
+				return hdw_newNumberValue((double) tree->children[0].as_integer + tree->children[1].as_number);
+			}
+			else {
+				hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
+				return hdw_nullValue();
+			}
+		}
+		else if (tree->children[0].type == HDW_NUMBER) {
+			if (tree->children[1].type == HDW_INTEGER) {
+				return hdw_newNumberValue(tree->children[0].as_number + (double) tree->children[1].as_integer);
+			}
+			else if (tree->children[1].type == HDW_NUMBER) {
+				return hdw_newNumberValue(tree->children[0].as_number + tree->children[1].as_number);
+			}
+			else {
+				hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
+				return hdw_nullValue();
+			}
+		}
+		else {
+			hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
+			return hdw_nullValue();
+		}
 	}
 	
 	// Not supported or invalid, return null.
