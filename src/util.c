@@ -57,22 +57,24 @@ static void hdw_printValue(hdw_value *value) {
 		printf("SystemError\n");
 	}
 	
-	if (value->type == HDW_FALSE) {
-		printf("false\n");
+	if (value->type == HDW_TYPE_BOOLEAN) {
+		if (value->as_boolean) {
+			printf("true\n");
+		}
+		else {
+			printf("false\n");
+		}
 	}
-	else if (value->type == HDW_TRUE) {
-		printf("true\n");
-	}
-	else if (value->type == HDW_NULL) {
+	else if (value->type == HDW_TYPE_NULL) {
 		printf("null\n");
 	}
-	else if (value->type == HDW_STRING) {
+	else if (value->type == HDW_TYPE_STRING) {
 		printf("'%s'\n", value->as_string);
 	}
-	else if (value->type == HDW_NUMBER) {
+	else if (value->type == HDW_TYPE_NUMBER) {
 		printf("%f\n", value->as_number);
 	}
-	else if (value->type == HDW_INTEGER) {
+	else if (value->type == HDW_TYPE_INTEGER) {
 		printf("%lld\n", value->as_integer);
 	}
 	else {
