@@ -338,6 +338,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		else if (current == '>') { SIMPL_TOKEN(MATCH('=') ? HDW_GTEQ : HDW_GT, NULL); }
 		else if (current == '&') { SIMPL_TOKEN(MATCH('&') ? HDW_AND : HDW_AMP, NULL); }
 		else if (current == '|') { SIMPL_TOKEN(MATCH('|') ? HDW_OR : HDW_BAR, NULL); }
+		else if (current == '.') { SIMPL_TOKEN(MATCH('.') ? HDW_DOTS : HDW_DOT, NULL); }
 		/* Literals */
 		else if (current == '"') {
 			if (hdw_stringtoken(&tokeniser)) {
@@ -367,7 +368,7 @@ int32_t hdw_tokenise(hdw_script * const restrict script, hdw_tokenarray *tokens,
 		else if (current == '~') { SIMPL_TOKEN(HDW_TILDE, NULL); }
 		else if (current == '?') { SIMPL_TOKEN(HDW_QUERY, NULL); }
 		else if (current == '`') { SIMPL_TOKEN(HDW_GRAVE, NULL); }
-		else if (current == '.') { SIMPL_TOKEN(HDW_DOT, NULL); }
+// 		else if (current == '.') { SIMPL_TOKEN(HDW_DOT, NULL); }
 		else if (current == ' ' || current == '\t' || current == '\n' || current == '\r') { /* IGNORE */ }
 		else {
 			char *msg = (char *) malloc(256 * sizeof(char));

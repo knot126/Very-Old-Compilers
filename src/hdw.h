@@ -37,6 +37,7 @@ enum {
 	
 	HDW_COMMA, // ,
 	HDW_DOT,   // .
+	HDW_DOTS,  // ..
 	HDW_RADIX, // '.' or ','
 	HDW_PLUS,  // +
 	HDW_MINUS, // -
