@@ -2,6 +2,8 @@
 // Interpreter
 // =============================================================================
 
+static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree);
+
 static void hdw_interpreterError(const char * const message) {
 	printf("Interpreter error: %s.\n", message);
 }
@@ -58,8 +60,85 @@ static hdw_value *hdw_not(hdw_value *val) {
 	return val;
 }
 
-static hdw_value *hdw_addExpressions() {
+static hdw_value *hdw_opAdd(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
 	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_INTEGER, left->as_integer + right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue((double) left->as_integer + right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newNumberValue(left->as_number + (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue(left->as_number + right->as_number);
+	}
+	else {
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opSub(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_INTEGER, left->as_integer - right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue((double) left->as_integer - right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newNumberValue(left->as_number - (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue(left->as_number - right->as_number);
+	}
+	else {
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opMul(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_INTEGER, left->as_integer * right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue((double) left->as_integer * right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newNumberValue(left->as_number * (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue(left->as_number * right->as_number);
+	}
+	else {
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
 }
 
 static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
@@ -124,34 +203,17 @@ static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hd
 	
 	// Binary Add
 	else if (tree->type == HDW_PLUS && tree->children_count == 2) {
-		if (tree->children[0].type == HDW_INTEGER) {
-			if (tree->children[1].type == HDW_INTEGER) {
-				return hdw_newValue(HDW_TYPE_INTEGER, tree->children[0].as_integer + tree->children[1].as_integer);
-			}
-			else if (tree->children[1].type == HDW_NUMBER) {
-				return hdw_newNumberValue((double) tree->children[0].as_integer + tree->children[1].as_number);
-			}
-			else {
-				hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
-				return hdw_nullValue();
-			}
-		}
-		else if (tree->children[0].type == HDW_NUMBER) {
-			if (tree->children[1].type == HDW_INTEGER) {
-				return hdw_newNumberValue(tree->children[0].as_number + (double) tree->children[1].as_integer);
-			}
-			else if (tree->children[1].type == HDW_NUMBER) {
-				return hdw_newNumberValue(tree->children[0].as_number + tree->children[1].as_number);
-			}
-			else {
-				hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
-				return hdw_nullValue();
-			}
-		}
-		else {
-			hdw_interpreterError("Cannot add two things that are not integers nor numbers.");
-			return hdw_nullValue();
-		}
+		return hdw_opAdd(interpreter, tree);
+	}
+	
+	// Binary Subtract
+	else if (tree->type == HDW_MINUS && tree->children_count == 2) {
+		return hdw_opSub(interpreter, tree);
+	}
+	
+	// Binary Subtract
+	else if (tree->type == HDW_ASTRESK && tree->children_count == 2) {
+		return hdw_opMul(interpreter, tree);
 	}
 	
 	// Not supported or invalid, return null.
