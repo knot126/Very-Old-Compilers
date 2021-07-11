@@ -78,6 +78,6 @@ static void hdw_printValue(hdw_value *value) {
 		printf("%lld\n", value->as_integer);
 	}
 	else {
-		printf("<Object: type %d at 0x%.16X>", value->type, value);
+		printf("(Object: has type %d at memory location <0x%.16X>)\n", value->type, value);
 	}
 }

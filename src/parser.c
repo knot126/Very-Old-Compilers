@@ -32,6 +32,24 @@ static hdw_treenode *hdw_treeAlloc(size_t size) {
 	return tn;
 }
 
+static hdw_treenode *hdw_treeAppend(hdw_treenode *dest, hdw_treenode *src) {
+	/**
+	 * Append to the end of a list-type node.
+	 */
+	
+	dest->children = (hdw_treenode *) realloc(sizeof *dest->children * ++dest->children_count);
+	
+	if (!dest->children) {
+		return NULL;
+	}
+	
+	dest->children[dest->children_count - 1] = *src;
+	
+	free(src);
+	
+	return dest;
+}
+
 static hdw_treenode *hdw_treeTrinary(uint32_t type, hdw_treenode *a, hdw_treenode *b, hdw_treenode *c) {
 	/**
 	 * Allocate a tree node that is trinary and set its type.
@@ -259,7 +277,7 @@ static hdw_treenode *hdw_ExpressionLevel3(hdw_parser * const restrict parser) {
 static hdw_treenode *hdw_ExpressionLevel2(hdw_parser * const restrict parser) {
 	hdw_treenode *tn = hdw_ExpressionLevel3(parser);
 	
-	while (HDW_CURRENT.type == HDW_LT || HDW_CURRENT.type == HDW_GT || HDW_CURRENT.type == HDW_LTEQ || HDW_CURRENT.type == HDW_LTEQ) {
+	while (HDW_CURRENT.type == HDW_LT || HDW_CURRENT.type == HDW_GT || HDW_CURRENT.type == HDW_LTEQ || HDW_CURRENT.type == HDW_GTEQ) {
 		// Get type
 		hdw_tokentype type = HDW_CURRENT.type;
 		
@@ -279,12 +297,12 @@ static hdw_treenode *hdw_ExpressionLevel2(hdw_parser * const restrict parser) {
 static hdw_treenode *hdw_ExpressionLevel1(hdw_parser * const restrict parser) {
 	hdw_treenode *tn = hdw_ExpressionLevel2(parser);
 	
-	while (HDW_CURRENT.type == HDW_EQ || HDW_GETTOKEN(1).type == HDW_NOTEQ) {
+	while (HDW_CURRENT.type == HDW_EQ || HDW_CURRENT.type == HDW_NOTEQ) {
 		// Get type
 		hdw_tokentype type = HDW_CURRENT.type;
 		
 		// Push up head
-		parser->head += 2;
+		parser->head++;
 		
 		// Do the right expression
 		hdw_treenode *right = hdw_ExpressionLevel2(parser);
@@ -333,6 +351,24 @@ static hdw_treenode *hdw_Expression(hdw_parser * const restrict parser) {
 	return tn;
 }
 
+static hdw_treenode *hdw_Statement(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_Expression(parser);
+	
+	if (HDW_CURRENT.type == HDW_PARL) {
+		hdw_treenode *next = hdw_FunctionCall();
+	}
+}
+
+static hdw_treenode *hdw_Program(hdw_parser * const restrict parser) {
+	hdw_treenode *tn = hdw_treeAlloc(0);
+	
+	for (size_t i = 0; i < parser->tokens->count; i++) {
+		hdw_treenode *next = hdw_Statement(parser);
+		
+		hdw_treeAppend(tn, next);
+	}
+}
+
 #undef HDW_CURRENT
 
 int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode ** const restrict tree, const hdw_tokenarray * const restrict tokens) {
@@ -346,7 +382,7 @@ int32_t hdw_parse(hdw_script * const restrict script, hdw_treenode ** const rest
 		.tokens = tokens,
 	};
 	
-	*tree = hdw_Expression(&parser);
+	*tree = hdw_Program(&parser);
 	
 	if (!tree) {
 		return HDW_ERR_PARSER;

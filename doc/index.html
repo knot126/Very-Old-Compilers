@@ -83,6 +83,19 @@
 type&amp; ref(type *obj);</div>
 		<p>Convert from a reference to a pointer, and the other way around.</p>
 		
+		<h3>Files and Streams</h3>
+		<div class="code">file_t&amp; file(string path, string mode);
+string read(file_t&amp; file, index count);
+void write(file_t&amp; file, string data);
+index seek(file_t&amp; file, integer basepos, index offset);
+index length(file_t&amp; file);
+void close(file_t&amp; file);</div>
+		<p>Open, read from, write to, seek at or close a file at path, with the given mode. Example:</p>
+		<div class="code">file_t&amp; f = file("readme.txt", "read");
+string message = read(f, length(f));
+close(f);
+print(message);</div>
+		
 		<h3>Execution and Lifetime</h3>
 		<div class="code">void abort();
 void abort_sp(int64 status = 255);</div>

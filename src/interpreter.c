@@ -15,7 +15,7 @@ static hdw_value *hdw_nullValue(void) {
 		return NULL;
 	}
 	
-	value->type = HDW_NULL;
+	value->type = HDW_TYPE_NULL;
 	
 	return value;
 }
@@ -51,8 +51,29 @@ static hdw_value *hdw_isTrue(hdw_treenode *input) {
 	if (input->type == HDW_NULL) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
 	if (input->type == HDW_STRING && input->as_string[0] == '\0') return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
 	if (input->type == HDW_INTEGER && input->as_integer == 0) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
-	if (input->type == HDW_NUMBER && input->as_number == 0.0f) return hdw_newValue(HDW_TYPE_NUMBER, 0);
+	if (input->type == HDW_NUMBER && input->as_number == 0.0f) return hdw_newValue(HDW_TYPE_BOOLEAN, 0);
 	return hdw_newValue(HDW_TYPE_BOOLEAN, 1);
+}
+
+static hdw_value *hdw_isEqual(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->as_integer == right->as_integer) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, 1);
+	}
+	else if (left->type == HDW_TYPE_STRING && left->type == HDW_TYPE_STRING && !strcmp(left->as_string, right->as_string)) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, 1);
+	}
+	else {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, 0);
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
 }
 
 static hdw_value *hdw_not(hdw_value *val) {
@@ -78,6 +99,7 @@ static hdw_value *hdw_opAdd(hdw_interpreter *interpreter, const hdw_treenode * c
 		res = hdw_newNumberValue(left->as_number + right->as_number);
 	}
 	else {
+		hdw_interpreterError("Failed to add values of types that cannot be added.");
 		res = hdw_nullValue();
 	}
 	
@@ -105,6 +127,7 @@ static hdw_value *hdw_opSub(hdw_interpreter *interpreter, const hdw_treenode * c
 		res = hdw_newNumberValue(left->as_number - right->as_number);
 	}
 	else {
+		hdw_interpreterError("Failed to subtract values of types that cannot be subtract.");
 		res = hdw_nullValue();
 	}
 	
@@ -132,6 +155,147 @@ static hdw_value *hdw_opMul(hdw_interpreter *interpreter, const hdw_treenode * c
 		res = hdw_newNumberValue(left->as_number * right->as_number);
 	}
 	else {
+		hdw_interpreterError("Failed to multiply values of types that cannot be multiply.");
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opDiv(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_INTEGER, left->as_integer / right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue((double) left->as_integer / right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newNumberValue(left->as_number / (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newNumberValue(left->as_number / right->as_number);
+	}
+	else {
+		hdw_interpreterError("Failed to divide values of types that cannot be divide.");
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opGT(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_integer > right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, (double) left->as_integer > right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number > (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number > right->as_number);
+	}
+	else {
+		hdw_interpreterError("Failed to find greater values because the types can't be compared.");
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opGTE(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_integer >= right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, (double) left->as_integer >= right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number >= (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number >= right->as_number);
+	}
+	else {
+		hdw_interpreterError("Failed to find greater or equal values because the types can't be compared.");
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opLT(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_integer < right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, (double) left->as_integer < right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number < (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number < right->as_number);
+	}
+	else {
+		hdw_interpreterError("Failed to find lesser values because the types can't be compared.");
+		res = hdw_nullValue();
+	}
+	
+	free(left);
+	free(right);
+	
+	return res;
+}
+
+static hdw_value *hdw_opLTE(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
+	hdw_value *left = hdw_interpreterEvaluate(interpreter, &tree->children[0]);
+	hdw_value *right = hdw_interpreterEvaluate(interpreter, &tree->children[1]);
+	hdw_value *res;
+	
+	if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_integer <= right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_INTEGER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, (double) left->as_integer <= right->as_number);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_INTEGER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number <= (double) right->as_integer);
+	}
+	else if (left->type == HDW_TYPE_NUMBER && right->type == HDW_TYPE_NUMBER) {
+		res = hdw_newValue(HDW_TYPE_BOOLEAN, left->as_number <= right->as_number);
+	}
+	else {
+		hdw_interpreterError("Failed to find lesser or equal values because the types can't be compared.");
 		res = hdw_nullValue();
 	}
 	
@@ -144,17 +308,16 @@ static hdw_value *hdw_opMul(hdw_interpreter *interpreter, const hdw_treenode * c
 static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hdw_treenode * const restrict tree) {
 	hdw_value *value;
 	
+	if (!tree) {
+		return hdw_nullValue();
+	}
+	
 	// Literals
-	if (tree->type == HDW_FALSE || tree->type == HDW_TRUE || tree->type == HDW_NULL || tree->type == HDW_STRING || tree->type == HDW_NUMBER || tree->type == HDW_INTEGER) {
+	if (tree->type == HDW_NULL || tree->type == HDW_STRING || tree->type == HDW_NUMBER || tree->type == HDW_INTEGER) {
 		uint32_t type;
 		
 		// Remap types
 		switch (tree->type) {
-			case HDW_FALSE:
-			case HDW_TRUE: {
-				type = HDW_TYPE_BOOLEAN;
-				break;
-			}
 			case HDW_NULL: {
 				type = HDW_TYPE_NULL;
 				break;
@@ -174,6 +337,14 @@ static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hd
 		}
 		
 		value = hdw_newValue(type, tree->as_integer);
+	}
+	
+	else if (tree->type == HDW_FALSE) {
+		value = hdw_newValue(HDW_TYPE_BOOLEAN, 0);
+	}
+	
+	else if (tree->type == HDW_TRUE) {
+		value = hdw_newValue(HDW_TYPE_BOOLEAN, -1);
 	}
 	
 	// Parenthesis - just call for the child's eval
@@ -211,13 +382,49 @@ static hdw_value *hdw_interpreterEvaluate(hdw_interpreter *interpreter, const hd
 		return hdw_opSub(interpreter, tree);
 	}
 	
-	// Binary Subtract
+	// Binary Multiply
 	else if (tree->type == HDW_ASTRESK && tree->children_count == 2) {
 		return hdw_opMul(interpreter, tree);
 	}
 	
+	// Binary Divide
+	else if (tree->type == HDW_BACK && tree->children_count == 2) {
+		return hdw_opDiv(interpreter, tree);
+	}
+	
+	// Greater Than
+	else if (tree->type == HDW_GT && tree->children_count == 2) {
+		return hdw_opGT(interpreter, tree);
+	}
+	
+	// Greater Than or Equal
+	else if (tree->type == HDW_GTEQ && tree->children_count == 2) {
+		return hdw_opGTE(interpreter, tree);
+	}
+	
+	// Less Than
+	else if (tree->type == HDW_LT && tree->children_count == 2) {
+		return hdw_opLT(interpreter, tree);
+	}
+	
+	// Less Than or Equal
+	else if (tree->type == HDW_LTEQ && tree->children_count == 2) {
+		return hdw_opLTE(interpreter, tree);
+	}
+	
+	// Equal
+	else if (tree->type == HDW_EQ && tree->children_count == 2) {
+		return hdw_isEqual(interpreter, tree);
+	}
+	
+	// Not Equal
+	else if (tree->type == HDW_NOTEQ && tree->children_count == 2) {
+		return hdw_not(hdw_isEqual(interpreter, tree));
+	}
+	
 	// Not supported or invalid, return null.
 	else {
+		hdw_interpreterError("Unknown kind of expression.");
 		return hdw_nullValue();
 	}
 	

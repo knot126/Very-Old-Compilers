@@ -5,7 +5,7 @@
 
 ExpressionLevel6:
 	-- Primary expression
-	NUMBER | STRING | keyword "true" | keyword "false" | keyword "null" | '(' Expression ')'
+	SYMBOL | NUMBER | STRING | keyword "true" | keyword "false" | keyword "null" | '(' Expression ')'
 
 ExpressionLevel5:
 	-- Remember that Level5 is recursive, since !(!(true)) can be an expression.
@@ -29,11 +29,11 @@ ExpressionLevel0:
 Expression:
 	ExpressionLevel0 ( ',' Expression ) ...
 
-StatementLevel1:
-	FunctionCall '(' Expression (',' Expression) ... ')'
-
-StatementLevel0:
-	StatementLevel1
+FunctionCall:
+	Expression ( '(' Expression (',' Expression) ... ')' )? -- can occur zero or one time
 
 Statement:
-	( Expression || StatementLevel0 ) ';' ( Statement ) ...
+	( Expression | FunctionCall ) ';'
+
+Program:
+	( Statement ) ...
