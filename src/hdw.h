@@ -170,14 +170,20 @@ enum {
 	DEW_TOKEN_BACKSLASH,
 };
 
+typedef union dew_Value {
+	dew_Integer as_integer;
+	dew_Number as_number;
+	dew_String as_string;
+	dew_Boolean as_boolean;
+} dew_Value;
+
 typedef struct dew_Token {
 	dew_Integer type;
-	union {
-		dew_Integer as_integer;
-		dew_Number as_number;
-		dew_String as_string;
-		dew_Boolean as_boolean;
-	} value;
+	dew_Value value;
+	
+	// Location information
+	dew_Index offset;
+	dew_Index end;
 } dew_Token;
 
 typedef struct dew_TokenArray {
@@ -185,7 +191,7 @@ typedef struct dew_TokenArray {
 	size_t count;
 } dew_TokenArray;
 
-static dew_String dew_strndup(dew_String str, dew_Index max) {
+static dew_String dew_strndup(dew_String str, const dew_Index max) {
 	/**
 	 * The same as C23 or POSIX strndup.
 	 */
@@ -193,7 +199,7 @@ static dew_String dew_strndup(dew_String str, dew_Index max) {
 	dew_Index len = 0;
 	
 	// Find needed length
-	while (*str++ != '\0' && len <= max) {
+	while ((str[len] != '\0') && (len <= max)) {
 		++len;
 	}
 	
@@ -267,6 +273,8 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 		
 		dew_Token tok;
 		
+		tok.offset = i;
+		
 		// + token
 		if (current == '+') {
 			tok.type = DEW_TOKEN_PLUS;
@@ -308,7 +316,7 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 		
 		else if (dew_isNumeric(current)) {
 			dew_Boolean isint = true;
-			dew_Index start = i;
+			const dew_Index start = i;
 			
 			// Read numbers. If has a decimal, set to not being an integer
 			while (dew_isNumeric(code[++i]) && i < len) {
@@ -319,12 +327,24 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			
 			dew_String numstr = dew_strndup(&code[start], i - start);
 			
+			if (isint) {
+				tok.type = DEW_TOKEN_INTEGER;
+				tok.value.as_integer = atoll(numstr);
+			}
+			else {
+				tok.type = DEW_TOKEN_NUMBER;
+				tok.value.as_number = strtod(numstr, NULL);
+			}
+			
 			DEW_FREE(numstr);
 		}
 		
 		else {
 			dew_pushError(script, (dew_Error) {i, "Invalid token."});
+			continue;
 		}
+		
+		tok.end = i;
 		
 		dew_pushToken(script, array, tok);
 	}
@@ -336,12 +356,113 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
  * =============================================================================
  */
 
-typedef struct dew_TreeNode {
+typedef enum dew_Rule {
+	DEW_RULE_DEFAULT = 0,
+	DEW_RULE_LITERAL,
+} dew_Rule;
+
+enum {
+	DEW_NODE_INVALID = 0,
+	DEW_NODE_INTEGER,
+	DEW_NODE_NUMBER,
+	DEW_NODE_STRING,
+	DEW_NODE_SYMBOL,
 	
+	DEW_NODE_ADD,
+	DEW_NODE_SUBTRACT,
+	DEW_NODE_MULTIPLY,
+	DEW_NODE_DIVIDE,
+	DEW_NODE_MODULO,
+};
+
+typedef struct dew_TreeNode {
+	dew_Integer type;
+	dew_Value value;
+	struct dew_TreeNode *sub;
+	dew_Index sub_count;
+	
+	// Location information
+	dew_Index offset;
+	dew_Index end;
 } dew_TreeNode;
 
-static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *code) {
+typedef struct dew_Parser {
+	dew_TreeNode *root;
+	dew_TokenArray *code;
+	dew_Index head;
+} dew_Parser;
+
+static dew_TreeNode *dew_makeTree(dew_Index subnodes) {
+	dew_TreeNode *node = DEW_ALLOCATE(sizeof *node);
 	
+	if (!node) {
+		return NULL;
+	}
+	
+	if (subnodes > 0) {
+		dew_TreeNode *sub = DEW_ALLOCATE(sizeof *sub * subnodes);
+		
+		if (!sub) {
+			DEW_FREE(node);
+			return NULL;
+		}
+		
+		node->sub = sub;
+		node->sub_count = subnodes;
+	}
+	else {
+		node->sub = NULL;
+		node->sub_count = 0;
+	}
+	
+	return node;
+}
+
+static dew_TreeNode *dew_makeLiteralNode(dew_Integer type, dew_Value value) {
+	dew_TreeNode *node = dew_makeTree(0);
+	
+	node->type = type;
+	node->value = value;
+	
+	return node;
+}
+
+#define CURRENT_TOKEN parser->code->data[parser->head]
+#define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
+
+static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule rule) {
+	if (rule == DEW_RULE_LITERAL || rule == DEW_RULE_DEFAULT) {
+		dew_Integer type;
+		
+		switch (CURRENT_TOKEN.type) {
+			case DEW_TOKEN_NUMBER: type = DEW_NODE_NUMBER; break;
+			case DEW_TOKEN_INTEGER: type = DEW_NODE_INTEGER; break;
+			case DEW_TOKEN_STRING: type = DEW_NODE_STRING; break;
+			case DEW_TOKEN_SYMBOL: type = DEW_NODE_SYMBOL; break;
+			default: type = DEW_NODE_INVALID; break;
+		}
+		
+		return dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+	}
+	
+	return NULL;
+}
+
+#undef CURRENT_TOKEN
+#undef GET_TOKEN
+
+static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *code) {
+	// init parser
+	dew_Parser parser;
+	memset(&parser, 0, sizeof parser);
+	parser.code = code;
+	
+	// parse code
+	dew_TreeNode *node = dew_match(&parser, tree, DEW_RULE_DEFAULT);
+	
+	if (!node) {
+		dew_pushError(script, (dew_Error) {parser.code->data[parser.head].offset, "Failed to create parse node."});
+	}
 }
 
 /**
@@ -362,6 +483,11 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Tokenise code
 	dew_tokenise(script, &tokens, code);
 	
+	// Check for errors
+	if (!tokens.count || !tokens.data) {
+		return (dew_Error) {-1, "No tokens to be had, which cannot be a valid input."};
+	}
+	
 	// Initialise tree node
 	dew_TreeNode tree;
 	memset(&tree, 0, sizeof tree);
@@ -369,9 +495,11 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Parse tokens
 	dew_parse(script, &tree, &tokens);
 	
-// 	for (size_t i = 0; i < tokens.count; i++) {
-// 		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
-// 	}
+	for (size_t i = 0; i < tokens.count; i++) {
+		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
+	}
+	
+	return (dew_Error) {0, "Finished okay!"};
 }
 
 #endif
