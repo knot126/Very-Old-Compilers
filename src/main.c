@@ -18,9 +18,11 @@ int main(int argc, const char *argv[]) {
 	char next[256];
 	
 	while (!feof(stdin)) {
-		printf("\033[1;35m  → \033[0m");
+		printf("\033[1;31m  → \033[0;36m");
 		
 		fgets(next, 256, stdin);
+		
+		printf("\033[0m");
 		
 		dew_runChunk(&script, next);
 		

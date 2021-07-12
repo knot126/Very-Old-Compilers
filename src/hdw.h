@@ -168,6 +168,7 @@ enum {
 	DEW_TOKEN_MINUS,
 	DEW_TOKEN_ASTRESK,
 	DEW_TOKEN_BACKSLASH,
+	DEW_TOKEN_BANG,
 };
 
 typedef union dew_Value {
@@ -339,6 +340,11 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			DEW_FREE(numstr);
 		}
 		
+		else if (current == '!') {
+			tok.type = DEW_TOKEN_BANG;
+			tok.value.as_string = NULL;
+		}
+		
 		else {
 			dew_pushError(script, (dew_Error) {i, "Invalid token."});
 			continue;
@@ -359,6 +365,7 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 typedef enum dew_Rule {
 	DEW_RULE_DEFAULT = 0,
 	DEW_RULE_LITERAL,
+	DEW_RULE_URANRY,
 } dew_Rule;
 
 enum {
@@ -373,6 +380,9 @@ enum {
 	DEW_NODE_MULTIPLY,
 	DEW_NODE_DIVIDE,
 	DEW_NODE_MODULO,
+	
+	DEW_NODE_NOT,
+	DEW_NODE_OPPOSITE,
 };
 
 typedef struct dew_TreeNode {
@@ -393,6 +403,10 @@ typedef struct dew_Parser {
 } dew_Parser;
 
 static dew_TreeNode *dew_makeTree(dew_Index subnodes) {
+	/**
+	 * Lower-level function to allocate trees.
+	 */
+	
 	dew_TreeNode *node = DEW_ALLOCATE(sizeof *node);
 	
 	if (!node) {
@@ -419,6 +433,10 @@ static dew_TreeNode *dew_makeTree(dew_Index subnodes) {
 }
 
 static dew_TreeNode *dew_makeLiteralNode(dew_Integer type, dew_Value value) {
+	/**
+	 * Creates a node with no children.
+	 */
+	
 	dew_TreeNode *node = dew_makeTree(0);
 	
 	node->type = type;
@@ -427,11 +445,32 @@ static dew_TreeNode *dew_makeLiteralNode(dew_Integer type, dew_Value value) {
 	return node;
 }
 
+static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeNode *left) {
+	/**
+	 * Allocates a binary tree.
+	 */
+	
+	dew_TreeNode *node = dew_makeTree(1);
+	
+	node->type = type;
+	node->value = value;
+	node->sub[0] = *left;
+	
+	DEW_FREE(left);
+	
+	return node;
+}
+
 #define CURRENT_TOKEN parser->code->data[parser->head]
-#define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
+// #define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
 
 static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule rule) {
-	if (rule == DEW_RULE_LITERAL || rule == DEW_RULE_DEFAULT) {
+	/**
+	 * Match the given rule, and return a tree of all that encompasses the 
+	 * matched rule.
+	 */
+	
+	if (rule == DEW_RULE_LITERAL) {
 		dew_Integer type;
 		
 		switch (CURRENT_TOKEN.type) {
@@ -442,16 +481,43 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 			default: type = DEW_NODE_INVALID; break;
 		}
 		
-		return dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+		dew_TreeNode *res = dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+		
+		parser->head++;
+		
+		return res;
+	}
+	
+	else if (rule == DEW_RULE_URANRY || rule == DEW_RULE_DEFAULT) {
+		if (CURRENT_TOKEN.type == DEW_TOKEN_MINUS || CURRENT_TOKEN.type == DEW_TOKEN_BANG) {
+			dew_Integer type;
+			
+			switch (CURRENT_TOKEN.type) {
+				case DEW_TOKEN_MINUS: type = DEW_NODE_OPPOSITE; break;
+				case DEW_TOKEN_BANG: type = DEW_NODE_NOT; break;
+			}
+			
+			parser->head++;
+			
+			dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_URANRY);
+			
+			tree = dew_binaryTree(type, (dew_Value) {0}, left);
+		}
+		
+		return dew_match(parser, tree, DEW_RULE_LITERAL);
 	}
 	
 	return NULL;
 }
 
 #undef CURRENT_TOKEN
-#undef GET_TOKEN
+// #undef GET_TOKEN
 
 static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *code) {
+	/**
+	 * Parse a token array into an AST.
+	 */
+	
 	// init parser
 	dew_Parser parser;
 	memset(&parser, 0, sizeof parser);
@@ -463,6 +529,9 @@ static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *co
 	if (!node) {
 		dew_pushError(script, (dew_Error) {parser.code->data[parser.head].offset, "Failed to create parse node."});
 	}
+	
+	*tree = *node;
+	DEW_FREE(node);
 }
 
 /**
@@ -470,6 +539,22 @@ static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *co
  * Script Chunk Running
  * =============================================================================
  */
+
+static void dew_printTree(dew_TreeNode *node, const dew_Index level) {
+	/**
+	 * Prints out a tree node.
+	 */
+	
+	for (dew_Index i = 0; i < level; i++) {
+		printf("\t");
+	}
+	
+	printf("%d (%.16X):\n", node->type, node->value.as_integer);
+	
+	for (dew_Index i = 0; i < node->sub_count; i++) {
+		dew_printTree(&node->sub[i], level + 1);
+	}
+}
 
 dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	/**
@@ -495,9 +580,11 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Parse tokens
 	dew_parse(script, &tree, &tokens);
 	
-	for (size_t i = 0; i < tokens.count; i++) {
-		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
-	}
+	dew_printTree(&tree, 0);
+	
+// 	for (size_t i = 0; i < tokens.count; i++) {
+// 		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
+// 	}
 	
 	return (dew_Error) {0, "Finished okay!"};
 }
