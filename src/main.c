@@ -18,11 +18,18 @@ int main(int argc, const char *argv[]) {
 	char next[256];
 	
 	while (!feof(stdin)) {
-		printf("  → ");
+		printf("\033[1;35m  → \033[0m");
 		
 		fgets(next, 256, stdin);
 		
 		dew_runChunk(&script, next);
+		
+		dew_Error err = dew_popError(&script);
+		
+		while (err.message != NULL) {
+			printf("%.3d: %s\n", err.offset, err.message);
+			err = dew_popError(&script);
+		}
 		
 		printf("\n");
 	}

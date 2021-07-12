@@ -32,7 +32,7 @@ typedef bool dew_Boolean;         // boolean
 typedef void * dew_Pointer;       // pointer
 
 typedef struct dew_Error {
-	int64_t code;
+	int64_t offset;
 	const char *message;
 } dew_Error;
 
@@ -55,10 +55,22 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code);
 
 #endif
 
+/**
+ * =============================================================================
+ * =============================================================================
+ * =============================================================================
+ */
+
 #ifdef DEW_IMPLEMENTATION
 #undef DEW_IMPLEMENTATION
 
 #include <string.h>
+
+/**
+ * =============================================================================
+ * Defines
+ * =============================================================================
+ */
 
 // Custom allocator
 #ifndef DEW_ALLOCATE
@@ -73,34 +85,11 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code);
 #define DEW_FREE free
 #endif // DEW_FREE
 
-enum {
-	DEW_TOKEN_INVALID = 0,
-	DEW_TOKEN_NUMBER,
-	DEW_TOKEN_STRING,
-	DEW_TOKEN_SYMBOL,
-	DEW_TOKEN_INTEGER,
-	DEW_TOKEN_KEYWORD,
-	
-	DEW_TOKEN_PLUS,
-	DEW_TOKEN_MINUS,
-	DEW_TOKEN_ASTRESK,
-	DEW_TOKEN_BACKSLASH,
-};
-
-typedef struct dew_Token {
-	dew_Integer type;
-	union {
-		dew_Integer as_integer;
-		dew_Number as_number;
-		dew_String as_string;
-		dew_Boolean as_boolean;
-	} value;
-} dew_Token;
-
-typedef struct dew_TokenArray {
-	dew_Token *data;
-	size_t count;
-} dew_TokenArray;
+/**
+ * =============================================================================
+ * Script Instance Mangement
+ * =============================================================================
+ */
 
 void dew_init(dew_Script *script) {
 	/**
@@ -119,6 +108,12 @@ void dew_free(dew_Script *script) {
 		DEW_FREE(script->error);
 	}
 }
+
+/**
+ * =============================================================================
+ * Errors
+ * =============================================================================
+ */
 
 void dew_pushError(dew_Script *script, dew_Error error) {
 	/**
@@ -155,6 +150,65 @@ dew_Error dew_popError(dew_Script *script) {
 	return error;
 }
 
+/**
+ * =============================================================================
+ * Tokeniser
+ * =============================================================================
+ */
+
+enum {
+	DEW_TOKEN_INVALID = 0,
+	DEW_TOKEN_NUMBER,
+	DEW_TOKEN_STRING,
+	DEW_TOKEN_SYMBOL,
+	DEW_TOKEN_INTEGER,
+	DEW_TOKEN_KEYWORD,
+	
+	DEW_TOKEN_PLUS,
+	DEW_TOKEN_MINUS,
+	DEW_TOKEN_ASTRESK,
+	DEW_TOKEN_BACKSLASH,
+};
+
+typedef struct dew_Token {
+	dew_Integer type;
+	union {
+		dew_Integer as_integer;
+		dew_Number as_number;
+		dew_String as_string;
+		dew_Boolean as_boolean;
+	} value;
+} dew_Token;
+
+typedef struct dew_TokenArray {
+	dew_Token *data;
+	size_t count;
+} dew_TokenArray;
+
+static bool dew_isAlpha(char c) {
+	/**
+	 * Return true if the char is alphabetical, false otherwise.
+	 */
+	
+	return ( ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || c == '_' );
+}
+
+static bool dew_isNumeric(char c) {
+	/**
+	 * Return true if the char is numerical, false otherwise.
+	 */
+	
+	return ( (c >= '0') && (c <= '9') );
+}
+
+static bool dew_isAlphaNumeric(char c) {
+	/**
+	 * Return true if char is alpha or numeric, false otherwise.
+	 */
+	
+	return ( dew_isAlpha(c) || dew_isNumeric(c) );
+}
+
 static void dew_pushToken(dew_Script *script, dew_TokenArray *array, dew_Token token) {
 	/**
 	 * Add a token to a token array.
@@ -175,14 +229,91 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 	 * Tokenise a string of code.
 	 */
 	
-	size_t len = strlen(code);
+	const size_t len = strlen(code);
+	
+	for (size_t i = 0; i < len; i++) {
+		const char current = code[i];
+		
+		dew_Token tok;
+		
+		// + token
+		if (current == '+') {
+			tok.type = DEW_TOKEN_PLUS;
+			tok.value.as_string = NULL;
+		}
+		
+		// * token
+		else if (current == '*') {
+			tok.type = DEW_TOKEN_ASTRESK;
+			tok.value.as_string = NULL;
+		}
+		
+		// - token
+		else if (current == '-') {
+			tok.type = DEW_TOKEN_MINUS;
+			tok.value.as_string = NULL;
+		}
+		
+		// / token
+		else if (current == '/') {
+			// Single-Line Comment
+			if (code[i + 1] == '/') {
+				while (++i < len && code[i] != '\n');
+				continue;
+			}
+			
+			// Multi-line Comment
+			else if (code[i + 1] == '*') {
+				while (i++ < len && code[i++] != '*' && code[i] != '/');
+				continue;
+			}
+			
+			// Single Backslash
+			else {
+				tok.type = DEW_TOKEN_BACKSLASH;
+				tok.value.as_string = NULL;
+			}
+		}
+		
+		else {
+			dew_pushError(script, (dew_Error) {i, "Invalid token."});
+		}
+		
+		dew_pushToken(script, array, tok);
+	}
 }
+
+/**
+ * =============================================================================
+ * Parser
+ * =============================================================================
+ */
+
+static void dew_parser() {
+	
+}
+
+/**
+ * =============================================================================
+ * Script Chunk Running
+ * =============================================================================
+ */
 
 dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	/**
 	 * Run a chunk of code.
 	 */
 	
+	// Initialise token array
+	dew_TokenArray tokens;
+	memset(&tokens, 0, sizeof tokens);
+	
+	// Tokenise code
+	dew_tokenise(script, &tokens, code);
+	
+	for (size_t i = 0; i < tokens.count; i++) {
+		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
+	}
 }
 
 #endif
