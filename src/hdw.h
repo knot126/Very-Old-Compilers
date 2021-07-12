@@ -32,8 +32,8 @@ typedef bool dew_Boolean;         // boolean
 typedef void * dew_Pointer;       // pointer
 
 typedef struct dew_Error {
-	int64_t offset;
-	const char *message;
+	dew_Integer offset;
+	dew_String message;
 } dew_Error;
 
 typedef struct dew_Script {
@@ -82,7 +82,7 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code);
 #endif // DEW_REALLOCATE
 
 #ifndef DEW_FREE
-#define DEW_FREE free
+#define DEW_FREE(x) free((void *) x)
 #endif // DEW_FREE
 
 /**
@@ -185,7 +185,38 @@ typedef struct dew_TokenArray {
 	size_t count;
 } dew_TokenArray;
 
-static bool dew_isAlpha(char c) {
+static dew_String dew_strndup(dew_String str, dew_Index max) {
+	/**
+	 * The same as C23 or POSIX strndup.
+	 */
+	
+	dew_Index len = 0;
+	
+	// Find needed length
+	while (*str++ != '\0' && len <= max) {
+		++len;
+	}
+	
+	// Allocate memory
+	char *res = DEW_ALLOCATE(len + 1);
+	
+	if (!res) {
+		return NULL;
+	}
+	
+	// Copy chars
+	for (dew_Index i = 0; i < len; i++) {
+		res[i] = str[i];
+	}
+	
+	// Set null termination
+	res[len] = '\0';
+	
+	// Return new string
+	return res;
+}
+
+static dew_Boolean dew_isAlpha(char c) {
 	/**
 	 * Return true if the char is alphabetical, false otherwise.
 	 */
@@ -193,15 +224,15 @@ static bool dew_isAlpha(char c) {
 	return ( ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z')) || c == '_' );
 }
 
-static bool dew_isNumeric(char c) {
+static dew_Boolean dew_isNumeric(char c) {
 	/**
 	 * Return true if the char is numerical, false otherwise.
 	 */
 	
-	return ( (c >= '0') && (c <= '9') );
+	return ( ((c >= '0') && (c <= '9')) || c == '.' );
 }
 
-static bool dew_isAlphaNumeric(char c) {
+static dew_Boolean dew_isAlphaNumeric(char c) {
 	/**
 	 * Return true if char is alpha or numeric, false otherwise.
 	 */
@@ -229,9 +260,9 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 	 * Tokenise a string of code.
 	 */
 	
-	const size_t len = strlen(code);
+	const dew_Index len = strlen(code);
 	
-	for (size_t i = 0; i < len; i++) {
+	for (dew_Index i = 0; i < len; i++) {
 		const char current = code[i];
 		
 		dew_Token tok;
@@ -275,6 +306,22 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			}
 		}
 		
+		else if (dew_isNumeric(current)) {
+			dew_Boolean isint = true;
+			dew_Index start = i;
+			
+			// Read numbers. If has a decimal, set to not being an integer
+			while (dew_isNumeric(code[++i]) && i < len) {
+				if (code[i] == '.') {
+					isint = false;
+				}
+			}
+			
+			dew_String numstr = dew_strndup(&code[start], i - start);
+			
+			DEW_FREE(numstr);
+		}
+		
 		else {
 			dew_pushError(script, (dew_Error) {i, "Invalid token."});
 		}
@@ -289,7 +336,11 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
  * =============================================================================
  */
 
-static void dew_parser() {
+typedef struct dew_TreeNode {
+	
+} dew_TreeNode;
+
+static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *code) {
 	
 }
 
@@ -311,9 +362,16 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Tokenise code
 	dew_tokenise(script, &tokens, code);
 	
-	for (size_t i = 0; i < tokens.count; i++) {
-		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
-	}
+	// Initialise tree node
+	dew_TreeNode tree;
+	memset(&tree, 0, sizeof tree);
+	
+	// Parse tokens
+	dew_parse(script, &tree, &tokens);
+	
+// 	for (size_t i = 0; i < tokens.count; i++) {
+// 		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
+// 	}
 }
 
 #endif
