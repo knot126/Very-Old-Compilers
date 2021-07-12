@@ -3,12 +3,11 @@ cmake_minimum_required(VERSION 3.20)
 # Set project
 project(Honeydew VERSION 0.0.0)
 
-set(EXEC_NAME hdw)
+set(EXEC_NAME dew)
 
 # Source files
 set(EXEC_FILES 
-	src/main.c
-	src/hdw.c)
+	src/main.c)
 
 # Force compiler to high warning levels
 if(MSVC)
@@ -24,7 +23,6 @@ endif()
 # Create executable and set up linking
 add_executable(${EXEC_NAME} ${EXEC_FILES})
 
-target_include_directories(${EXEC_NAME} PRIVATE ${LUA_DIR})
 target_include_directories(${EXEC_NAME} PRIVATE "src")
 
 target_link_libraries(${EXEC_NAME} m)

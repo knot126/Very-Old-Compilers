@@ -1,19 +1,31 @@
-#include <stdio.h>
+/**
+ * Honeydew Main File
+ * ==================
+ * 
+ * This is the main file for the Honeydew built-in interpreter.
+ */
 
+#include <stdio.h>
+#include <stdlib.h>
+
+#define DEW_IMPLEMENTATION
 #include "hdw.h"
 
-int main(int argc, char *argv[]) {
-	if (argc > 2) {
-		printf("Usage: %s [input file]\n", argv[0]);
-		return 1;
-	}
-	else if (argc == 2) {
-		int status = hdw_dofile(argv[1]);
-		return status;
-	}
-	else if (argc == 1) {
-		hdw_bulitin_prompt();
+int main(int argc, const char *argv[]) {
+	dew_Script script;
+	dew_init(&script);
+	
+	char next[256];
+	
+	while (!feof(stdin)) {
+		printf("  → ");
+		
+		fgets(next, 256, stdin);
+		
+		dew_runChunk(&script, next);
+		
+		printf("\n");
 	}
 	
-	return 0;
+	dew_free(&script);
 }
