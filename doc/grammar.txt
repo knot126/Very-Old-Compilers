@@ -3,31 +3,32 @@
 -- NOTE: If viewing in kate, try setting syntax highlihgting to Lua, it works
 --       best that way.
 
-ExpressionLevel6:
+Literal:
 	-- Primary expression
 	SYMBOL | NUMBER | STRING | keyword "true" | keyword "false" | keyword "null" | '(' Expression ')'
 
-ExpressionLevel5:
+Uranry:
 	-- Remember that Level5 is recursive, since !(!(true)) can be an expression.
-	( ('-' || '!') ExpressionLevel5 ) | ExpressionLevel6
+	( ('-' || '!') Uranry ) | Literal
 
-ExpressionLevel4:
-	ExpressionLevel5 ( ('*' || '/') ExpressionLevel5 ) ...
+Linear:
+	Uranry ( ('*' || '/' || '%') Uranry ) ...
 
-ExpressionLevel3:
-	ExpressionLevel4 ( ('+' || '-') ExpressionLevel4 ) ...
+Sublinear:
+	Linear ( ('+' || '-') Linear ) ...
 
-ExpressionLevel2:
-	ExpressionLevel3 ( ('>' || '>=' || '<' || '<=') ExpressionLevel3 ) ...
+Compare:
+	Sublinear ( ('>' || '>=' || '<' || '<=') Sublinear ) ...
 
-ExpressionLevel1:
-	ExpressionLevel2 ( ('==' || '!=') ExpressionLevel2 ) ...
+Equality:
+	Compare ( ('==' || '!=') Compare ) ...
 
-ExpressionLevel0:
-	ExpressionLevel1 ( '?' ExpressionLevel0 ':' ExpressionLevel0 ) ...
+-- For the ?: Operator
+-- ExpressionLevel0:
+-- 	Equality ( '?' ExpressionLevel0 ':' ExpressionLevel0 ) ...
 
 Expression:
-	ExpressionLevel0 ( ',' Expression ) ...
+	Equality ( ',' Expression ) ...
 
 FunctionCall:
 	Expression ( '(' Expression (',' Expression) ... ')' )? -- can occur zero or one time

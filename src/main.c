@@ -24,6 +24,12 @@ int main(int argc, const char *argv[]) {
 		
 		printf("\033[0m");
 		
+		if (next[0] == '@') {
+			if (!strcmp(&next[1], "__Exit")) {
+				exit(0);
+			}
+		}
+		
 		dew_runChunk(&script, next);
 		
 		dew_Error err = dew_popError(&script);

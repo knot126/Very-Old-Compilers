@@ -31,11 +31,20 @@ typedef const char * dew_String;  // string
 typedef bool dew_Boolean;         // boolean
 typedef void * dew_Pointer;       // pointer
 
+// Errors
 typedef struct dew_Error {
 	dew_Integer offset;
 	dew_String message;
 } dew_Error;
 
+// Chunk of bytecode
+typedef struct dew_Chunk {
+	dew_Byte *data;
+	size_t count;
+	size_t alloc;
+} dew_Chunk;
+
+// A script
 typedef struct dew_Script {
 	/**
 	 * Contains all the "global" state for a single script.
@@ -44,7 +53,8 @@ typedef struct dew_Script {
 	dew_Error *error;
 	dew_Index  error_count;
 	
-	
+	dew_Chunk *chunk;
+	dew_Index  chunk_count;
 } dew_Script;
 
 void dew_init(dew_Script *script);
@@ -164,11 +174,12 @@ enum {
 	DEW_TOKEN_INTEGER,
 	DEW_TOKEN_KEYWORD,
 	
-	DEW_TOKEN_PLUS,
-	DEW_TOKEN_MINUS,
-	DEW_TOKEN_ASTRESK,
-	DEW_TOKEN_BACKSLASH,
-	DEW_TOKEN_BANG,
+	DEW_TOKEN_PLUS,            // '+'
+	DEW_TOKEN_MINUS,           // '-'
+	DEW_TOKEN_ASTRESK,         // '*'
+	DEW_TOKEN_BACKSLASH,       // '/'
+	DEW_TOKEN_BANG,            // '!'
+	DEW_TOKEN_PERCENT,         // '%'
 };
 
 typedef union dew_Value {
@@ -294,6 +305,12 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			tok.value.as_string = NULL;
 		}
 		
+		// % token
+		else if (current == '%') {
+			tok.type = DEW_TOKEN_PERCENT;
+			tok.value.as_string = NULL;
+		}
+		
 		// / token
 		else if (current == '/') {
 			// Single-Line Comment
@@ -345,8 +362,12 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			tok.value.as_string = NULL;
 		}
 		
+		else if (current == '\0') {
+			break;
+		}
+		
 		else {
-			dew_pushError(script, (dew_Error) {i, "Invalid token."});
+			dew_pushError(script, (dew_Error) {i + 1, "The character is not recognised."});
 			continue;
 		}
 		
@@ -366,6 +387,11 @@ typedef enum dew_Rule {
 	DEW_RULE_DEFAULT = 0,
 	DEW_RULE_LITERAL,
 	DEW_RULE_URANRY,
+	DEW_RULE_LINEAR,
+	DEW_RULE_SUBLINEAR,
+	DEW_RULE_COMPARE,
+	DEW_RULE_EQUALITY,
+	DEW_RULE_EXPRESSION,
 } dew_Rule;
 
 enum {
@@ -445,12 +471,14 @@ static dew_TreeNode *dew_makeLiteralNode(dew_Integer type, dew_Value value) {
 	return node;
 }
 
-static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeNode *left) {
+static dew_TreeNode *dew_uranryTree(dew_Integer type, dew_Value value, dew_TreeNode *left) {
 	/**
-	 * Allocates a binary tree.
+	 * Allocates a uranry tree.
 	 */
 	
 	dew_TreeNode *node = dew_makeTree(1);
+	
+	if (!node) return NULL;
 	
 	node->type = type;
 	node->value = value;
@@ -461,8 +489,28 @@ static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeN
 	return node;
 }
 
+static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeNode *left, dew_TreeNode *right) {
+	/**
+	 * Allocates a binary tree.
+	 */
+	
+	dew_TreeNode *node = dew_makeTree(2);
+	
+	if (!node) return NULL;
+	
+	node->type = type;
+	node->value = value;
+	node->sub[0] = *left;
+	node->sub[1] = *right;
+	
+	DEW_FREE(left);
+	DEW_FREE(right);
+	
+	return node;
+}
+
 #define CURRENT_TOKEN parser->code->data[parser->head]
-// #define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
+#define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
 
 static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule rule) {
 	/**
@@ -470,6 +518,7 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 	 * matched rule.
 	 */
 	
+	// Literals
 	if (rule == DEW_RULE_LITERAL) {
 		dew_Integer type;
 		
@@ -481,14 +530,19 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 			default: type = DEW_NODE_INVALID; break;
 		}
 		
-		dew_TreeNode *res = dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+		if (type != DEW_NODE_INVALID) {
+			dew_TreeNode *res = dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+			
+			parser->head++;
+			
+			return res;
+		}
 		
-		parser->head++;
-		
-		return res;
+		return NULL;
 	}
 	
-	else if (rule == DEW_RULE_URANRY || rule == DEW_RULE_DEFAULT) {
+	// Uranary Operators
+	else if (rule == DEW_RULE_URANRY) {
 		if (CURRENT_TOKEN.type == DEW_TOKEN_MINUS || CURRENT_TOKEN.type == DEW_TOKEN_BANG) {
 			dew_Integer type;
 			
@@ -501,19 +555,44 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 			
 			dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_URANRY);
 			
-			tree = dew_binaryTree(type, (dew_Value) {0}, left);
+			tree = dew_uranryTree(type, (dew_Value) {0}, left);
+			
+			return tree;
 		}
 		
 		return dew_match(parser, tree, DEW_RULE_LITERAL);
+	}
+	
+	// Multiply, Divide and Modulo
+	else if (rule == DEW_RULE_LINEAR || rule == DEW_RULE_DEFAULT) {
+		dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_URANRY);
+		
+		while (CURRENT_TOKEN.type == DEW_TOKEN_ASTRESK || CURRENT_TOKEN.type == DEW_TOKEN_BACKSLASH || CURRENT_TOKEN.type == DEW_TOKEN_PERCENT) {
+			dew_Integer type;
+			
+			switch (CURRENT_TOKEN.type) {
+				case DEW_TOKEN_ASTRESK: type = DEW_NODE_MULTIPLY; break;
+				case DEW_TOKEN_BACKSLASH: type = DEW_NODE_DIVIDE; break;
+				case DEW_TOKEN_PERCENT: type = DEW_NODE_MODULO; break;
+			}
+			
+			parser->head++;
+			
+			dew_TreeNode *right = dew_match(parser, tree, DEW_RULE_URANRY);
+			
+			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
+		}
+		
+		return left;
 	}
 	
 	return NULL;
 }
 
 #undef CURRENT_TOKEN
-// #undef GET_TOKEN
+#undef GET_TOKEN
 
-static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *code) {
+static dew_TreeNode *dew_parse(dew_Script *script, dew_TokenArray *code) {
 	/**
 	 * Parse a token array into an AST.
 	 */
@@ -524,15 +603,20 @@ static void dew_parse(dew_Script *script, dew_TreeNode *tree, dew_TokenArray *co
 	parser.code = code;
 	
 	// parse code
-	dew_TreeNode *node = dew_match(&parser, tree, DEW_RULE_DEFAULT);
+	dew_TreeNode *node = dew_match(&parser, NULL, DEW_RULE_DEFAULT);
 	
 	if (!node) {
 		dew_pushError(script, (dew_Error) {parser.code->data[parser.head].offset, "Failed to create parse node."});
 	}
 	
-	*tree = *node;
-	DEW_FREE(node);
+	return node;
 }
+
+/**
+ * =============================================================================
+ * Virtual Mechine
+ * =============================================================================
+ */
 
 /**
  * =============================================================================
@@ -573,18 +657,14 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 		return (dew_Error) {-1, "No tokens to be had, which cannot be a valid input."};
 	}
 	
-	// Initialise tree node
-	dew_TreeNode tree;
-	memset(&tree, 0, sizeof tree);
-	
 	// Parse tokens
-	dew_parse(script, &tree, &tokens);
+	dew_TreeNode *tree = dew_parse(script, &tokens);
 	
-	dew_printTree(&tree, 0);
+	for (size_t i = 0; i < tokens.count; i++) {
+		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
+	}
 	
-// 	for (size_t i = 0; i < tokens.count; i++) {
-// 		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
-// 	}
+	dew_printTree(tree, 0);
 	
 	return (dew_Error) {0, "Finished okay!"};
 }
