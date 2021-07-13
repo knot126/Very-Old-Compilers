@@ -366,6 +366,10 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			break;
 		}
 		
+		else if (current == ' ' || current == '\t' || current == '\r' || current == '\n') {
+			continue;
+		}
+		
 		else {
 			dew_pushError(script, (dew_Error) {i + 1, "The character is not recognised."});
 			continue;
@@ -563,8 +567,8 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 		return dew_match(parser, tree, DEW_RULE_LITERAL);
 	}
 	
-	// Multiply, Divide and Modulo
-	else if (rule == DEW_RULE_LINEAR || rule == DEW_RULE_DEFAULT) {
+	// Multiply, Divide and Modulo (The linear operators)
+	else if (rule == DEW_RULE_LINEAR) {
 		dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_URANRY);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_ASTRESK || CURRENT_TOKEN.type == DEW_TOKEN_BACKSLASH || CURRENT_TOKEN.type == DEW_TOKEN_PERCENT) {
@@ -579,6 +583,28 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 			parser->head++;
 			
 			dew_TreeNode *right = dew_match(parser, tree, DEW_RULE_URANRY);
+			
+			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
+		}
+		
+		return left;
+	}
+	
+	// Sublinear (addition and subtraction)
+	else if (rule == DEW_RULE_SUBLINEAR || rule == DEW_RULE_DEFAULT) {
+		dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_LINEAR);
+		
+		while (CURRENT_TOKEN.type == DEW_TOKEN_PLUS || CURRENT_TOKEN.type == DEW_TOKEN_MINUS) {
+			dew_Integer type;
+			
+			switch (CURRENT_TOKEN.type) {
+				case DEW_TOKEN_PLUS: type = DEW_NODE_ADD; break;
+				case DEW_TOKEN_MINUS: type = DEW_NODE_SUBTRACT; break;
+			}
+			
+			parser->head++;
+			
+			dew_TreeNode *right = dew_match(parser, tree, DEW_RULE_LINEAR);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -624,6 +650,25 @@ static dew_TreeNode *dew_parse(dew_Script *script, dew_TokenArray *code) {
  * =============================================================================
  */
 
+static const char *dew_nodeTypeString(dew_Index i) {
+	switch (i) {
+		case DEW_NODE_INVALID: return "DEW_NODE_INVALID";
+		
+		case DEW_NODE_INTEGER: return "DEW_NODE_INTEGER";
+		case DEW_NODE_NUMBER: return "DEW_NODE_NUMBER";
+		case DEW_NODE_STRING: return "DEW_NODE_STRING";
+		case DEW_NODE_SYMBOL: return "DEW_NODE_SYMBOL";
+		
+		case DEW_NODE_ADD: return "DEW_NODE_ADD";
+		case DEW_NODE_SUBTRACT: return "DEW_NODE_SUBTRACT";
+		case DEW_NODE_MULTIPLY: return "DEW_NODE_MULTIPLY";
+		case DEW_NODE_DIVIDE: return "DEW_NODE_DIVIDE";
+		case DEW_NODE_MODULO: return "DEW_NODE_MODULO";
+		
+		default: return "Node";
+	}
+}
+
 static void dew_printTree(dew_TreeNode *node, const dew_Index level) {
 	/**
 	 * Prints out a tree node.
@@ -633,7 +678,7 @@ static void dew_printTree(dew_TreeNode *node, const dew_Index level) {
 		printf("\t");
 	}
 	
-	printf("%d (%.16X):\n", node->type, node->value.as_integer);
+	printf("\033[1m%s\033[0m (%.16X):\n", dew_nodeTypeString(node->type), node->value.as_integer);
 	
 	for (dew_Index i = 0; i < node->sub_count; i++) {
 		dew_printTree(&node->sub[i], level + 1);
@@ -660,9 +705,9 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Parse tokens
 	dew_TreeNode *tree = dew_parse(script, &tokens);
 	
-	for (size_t i = 0; i < tokens.count; i++) {
-		printf("%.3d -> %.3d : %.16X\n", i, tokens.data[i].type, tokens.data[i].value.as_integer);
-	}
+// 	for (size_t i = 0; i < tokens.count; i++) {
+// 		printf("Char(%.3d) -> %.3d : %.16X\n", i + 1, tokens.data[i].type, tokens.data[i].value.as_integer);
+// 	}
 	
 	dew_printTree(tree, 0);
 	
