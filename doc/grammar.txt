@@ -37,11 +37,20 @@ Equality:
 Expression:
 	Equality --[[( ',' Expression ) ...]]
 
+ExprStatement:
+	Expression
+
 FunctionCall:
-	Expression ( '(' Expression (',' Expression) ... ')' )? -- can occur zero or one time
+	Expression ( '(' Expression (',' Expression) ... ')' )? ';' -- can occur zero or one time
+
+VarDecl:
+	SYMBOL SYMBOL ( '=' Expression )? ';'
 
 Statement:
-	( Expression | FunctionCall ) ';'
+	ExprStatement
+
+Declare:
+	VarDecl | Statement
 
 Program:
 	( Statement ) ...
