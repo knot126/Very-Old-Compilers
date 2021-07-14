@@ -180,6 +180,14 @@ enum {
 	DEW_TOKEN_BACKSLASH,       // '/'
 	DEW_TOKEN_BANG,            // '!'
 	DEW_TOKEN_PERCENT,         // '%'
+	DEW_TOKEN_EQUAL,           // '='
+	
+	DEW_TOKEN_COMPARE,         // '=='
+	DEW_TOKEN_NOTCOMPARE,      // '!='
+	DEW_TOKEN_POINTYOPEN,      // '<'
+	DEW_TOKEN_POINTYCLOSE,     // '>'
+	DEW_TOKEN_LESSEQUAL,       // '<='
+	DEW_TOKEN_MOREEQUAL,       // '>='
 };
 
 typedef union dew_Value {
@@ -332,6 +340,62 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			}
 		}
 		
+		else if (current == '!') {
+			if (code[i + 1] == '=') {
+				i++;
+				tok.type = DEW_TOKEN_NOTCOMPARE;
+				tok.value.as_string = NULL;
+			}
+			else {
+				tok.type = DEW_TOKEN_BANG;
+				tok.value.as_string = NULL;
+			}
+		}
+		
+		else if (current == '=') {
+			if (code[i + 1] == '=') {
+				i++;
+				tok.type = DEW_TOKEN_COMPARE;
+				tok.value.as_string = NULL;
+			}
+			else {
+				tok.type = DEW_TOKEN_EQUAL;
+				tok.value.as_string = NULL;
+			}
+		}
+		
+		else if (current == '<') {
+			if (code[i + 1] == '=') {
+				i++;
+				tok.type = DEW_TOKEN_LESSEQUAL;
+				tok.value.as_string = NULL;
+			}
+			else {
+				tok.type = DEW_TOKEN_POINTYOPEN;
+				tok.value.as_string = NULL;
+			}
+		}
+		
+		else if (current == '>') {
+			if (code[i + 1] == '=') {
+				i++;
+				tok.type = DEW_TOKEN_MOREEQUAL;
+				tok.value.as_string = NULL;
+			}
+			else {
+				tok.type = DEW_TOKEN_POINTYCLOSE;
+				tok.value.as_string = NULL;
+			}
+		}
+		
+		else if (current == '\0') {
+			break;
+		}
+		
+		else if (current == ' ' || current == '\t' || current == '\r' || current == '\n') {
+			continue;
+		}
+		
 		else if (dew_isNumeric(current)) {
 			dew_Boolean isint = true;
 			const dew_Index start = i;
@@ -342,6 +406,8 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 					isint = false;
 				}
 			}
+			
+			i--;
 			
 			dew_String numstr = dew_strndup(&code[start], i - start);
 			
@@ -357,17 +423,26 @@ static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String c
 			DEW_FREE(numstr);
 		}
 		
-		else if (current == '!') {
-			tok.type = DEW_TOKEN_BANG;
-			tok.value.as_string = NULL;
+		else if (current == '"') {
+			const dew_Index start = ++i;
+			
+			// Read the symbol.
+			while (code[++i] != '"' && i < len);
+			i--;
+			
+			tok.type = DEW_TOKEN_STRING;
+			tok.value.as_string = dew_strndup(&code[start], i - start);
 		}
 		
-		else if (current == '\0') {
-			break;
-		}
-		
-		else if (current == ' ' || current == '\t' || current == '\r' || current == '\n') {
-			continue;
+		else if (dew_isAlpha(current)) {
+			const dew_Index start = i;
+			
+			// Read the symbol.
+			while (dew_isAlphaNumeric(code[++i]) && i < len);
+			i--;
+			
+			tok.type = DEW_TOKEN_SYMBOL;
+			tok.value.as_string = dew_strndup(&code[start], i - start);
 		}
 		
 		else {
@@ -413,6 +488,14 @@ enum {
 	
 	DEW_NODE_NOT,
 	DEW_NODE_OPPOSITE,
+	
+	DEW_NODE_LESS,
+	DEW_NODE_LESS_EQUAL,
+	DEW_NODE_GREATER,
+	DEW_NODE_GREATER_EQUAL,
+	
+	DEW_NODE_EQUAL,
+	DEW_NODE_NOT_EQUAL,
 };
 
 typedef struct dew_TreeNode {
@@ -591,7 +674,7 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 	}
 	
 	// Sublinear (addition and subtraction)
-	else if (rule == DEW_RULE_SUBLINEAR || rule == DEW_RULE_DEFAULT) {
+	else if (rule == DEW_RULE_SUBLINEAR) {
 		dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_LINEAR);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_PLUS || CURRENT_TOKEN.type == DEW_TOKEN_MINUS) {
@@ -605,6 +688,30 @@ static dew_TreeNode *dew_match(dew_Parser *parser, dew_TreeNode *tree, dew_Rule 
 			parser->head++;
 			
 			dew_TreeNode *right = dew_match(parser, tree, DEW_RULE_LINEAR);
+			
+			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
+		}
+		
+		return left;
+	}
+	
+	// Compare (on numbers)
+	else if (rule == DEW_RULE_COMPARE || rule == DEW_RULE_DEFAULT) {
+		dew_TreeNode *left = dew_match(parser, tree, DEW_RULE_SUBLINEAR);
+		
+		while (CURRENT_TOKEN.type == DEW_TOKEN_POINTYOPEN || CURRENT_TOKEN.type == DEW_TOKEN_POINTYCLOSE || CURRENT_TOKEN.type == DEW_TOKEN_LESSEQUAL || CURRENT_TOKEN.type == DEW_TOKEN_MOREEQUAL) {
+			dew_Integer type;
+			
+			switch (CURRENT_TOKEN.type) {
+				case DEW_TOKEN_POINTYOPEN: type = DEW_NODE_LESS; break;
+				case DEW_TOKEN_POINTYCLOSE: type = DEW_NODE_GREATER; break;
+				case DEW_TOKEN_LESSEQUAL: type = DEW_NODE_LESS_EQUAL; break;
+				case DEW_TOKEN_MOREEQUAL: type = DEW_NODE_GREATER_EQUAL; break;
+			}
+			
+			parser->head++;
+			
+			dew_TreeNode *right = dew_match(parser, tree, DEW_RULE_SUBLINEAR);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -644,6 +751,12 @@ static dew_TreeNode *dew_parse(dew_Script *script, dew_TokenArray *code) {
  * =============================================================================
  */
 
+enum {
+	DEW_OP_NOP = 0,
+	DEW_OP_RET,
+	DEW_OP_SET,
+};
+
 /**
  * =============================================================================
  * Script Chunk Running
@@ -665,6 +778,13 @@ static const char *dew_nodeTypeString(dew_Index i) {
 		case DEW_NODE_DIVIDE: return "DEW_NODE_DIVIDE";
 		case DEW_NODE_MODULO: return "DEW_NODE_MODULO";
 		
+		case DEW_NODE_LESS: return "DEW_NODE_LESS";
+		case DEW_NODE_LESS_EQUAL: return "DEW_NODE_LESS_EQUAL";
+		case DEW_NODE_GREATER: return "DEW_NODE_GREATER";
+		case DEW_NODE_GREATER_EQUAL: return "DEW_NODE_GREATER_EQUAL";
+		case DEW_NODE_EQUAL: return "DEW_NODE_EQUAL";
+		case DEW_NODE_NOT_EQUAL: return "DEW_NODE_NOT_EQUAL";
+		
 		default: return "Node";
 	}
 }
@@ -674,14 +794,30 @@ static void dew_printTree(dew_TreeNode *node, const dew_Index level) {
 	 * Prints out a tree node.
 	 */
 	
-	for (dew_Index i = 0; i < level; i++) {
-		printf("\t");
+	if (node) {
+		for (dew_Index i = 0; i < level; i++) {
+			printf("\t");
+		}
+		
+		printf("\033[1m%s\033[0m (%.16X", dew_nodeTypeString(node->type), node->value.as_integer);
+		if (node->type == DEW_NODE_STRING || node->type == DEW_NODE_SYMBOL) {
+			printf(" = \"%s\"", node->value.as_string);
+		}
+		else if (node->type == DEW_NODE_INTEGER) {
+			printf(" = %d", node->value.as_integer);
+		}
+		else if (node->type == DEW_NODE_NUMBER) {
+			printf(" = %f", node->value.as_number);
+		}
+		printf("):\n");
+		
+		
+		for (dew_Index i = 0; i < node->sub_count; i++) {
+			dew_printTree(&node->sub[i], level + 1);
+		}
 	}
-	
-	printf("\033[1m%s\033[0m (%.16X):\n", dew_nodeTypeString(node->type), node->value.as_integer);
-	
-	for (dew_Index i = 0; i < node->sub_count; i++) {
-		dew_printTree(&node->sub[i], level + 1);
+	else {
+		puts("(null)");
 	}
 }
 
@@ -705,9 +841,9 @@ dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	// Parse tokens
 	dew_TreeNode *tree = dew_parse(script, &tokens);
 	
-// 	for (size_t i = 0; i < tokens.count; i++) {
-// 		printf("Char(%.3d) -> %.3d : %.16X\n", i + 1, tokens.data[i].type, tokens.data[i].value.as_integer);
-// 	}
+	for (size_t i = 0; i < tokens.count; i++) {
+		printf("Char(%.3d) -> %.3d : %.16X\n", i + 1, tokens.data[i].type, tokens.data[i].value.as_integer);
+	}
 	
 	dew_printTree(tree, 0);
 	

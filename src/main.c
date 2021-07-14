@@ -9,7 +9,7 @@
 #include <stdlib.h>
 
 #define DEW_IMPLEMENTATION
-#include "hdw.h"
+#include "dew.h"
 
 int main(int argc, const char *argv[]) {
 	dew_Script script;
@@ -25,7 +25,7 @@ int main(int argc, const char *argv[]) {
 		printf("\033[0m");
 		
 		if (next[0] == '@') {
-			if (!strcmp(&next[1], "__Exit")) {
+			if (!strcmp(&next[1], "exit")) {
 				exit(0);
 			}
 		}

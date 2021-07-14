@@ -5,30 +5,37 @@
 
 Literal:
 	-- Primary expression
-	SYMBOL | NUMBER | STRING | keyword "true" | keyword "false" | keyword "null" | '(' Expression ')'
+	SYMBOL
+	NUMBER
+	STRING
+	keyword "true"
+	keyword "false"
+	keyword "null"
+	'(' Expression ')'
 
 Uranry:
 	-- Remember that Level5 is recursive, since !(!(true)) can be an expression.
-	( ('-' || '!') Uranry ) | Literal
+	( ('-' || '!') Uranry )
+	Literal
 
 Linear:
-	Uranry ( ('*' || '/' || '%') Uranry ) ...
+	Uranry ( ('*' || '/' || '%') Uranry )*
 
 Sublinear:
-	Linear ( ('+' || '-') Linear ) ...
+	Linear ( ('+' || '-') Linear )*
 
 Compare:
-	Sublinear ( ('>' || '>=' || '<' || '<=') Sublinear ) ...
+	Sublinear ( ('>' || '>=' || '<' || '<=') Sublinear )*
 
 Equality:
-	Compare ( ('==' || '!=') Compare ) ...
+	Compare ( ('==' || '!=') Compare )*
 
 -- For the ?: Operator
 -- ExpressionLevel0:
 -- 	Equality ( '?' ExpressionLevel0 ':' ExpressionLevel0 ) ...
 
 Expression:
-	Equality ( ',' Expression ) ...
+	Equality --[[( ',' Expression ) ...]]
 
 FunctionCall:
 	Expression ( '(' Expression (',' Expression) ... ')' )? -- can occur zero or one time
