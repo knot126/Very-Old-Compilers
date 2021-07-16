@@ -12,6 +12,9 @@
  * 
  * You can define a custom allocator using the macros DEW_ALLOCATE, 
  * DEW_REALLOCATE and DEW_FREE respective to their functions.
+ * 
+ * I am very aware that the project's current state is not really very usable. I
+ * hope that I can fix this without rewriting the whole thing again, but 
  */
 
 #ifndef DEW_INCLUDED
@@ -20,6 +23,7 @@
 #include <inttypes.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <setjmp.h>
 
 // Basic types
 typedef uint8_t dew_Byte;         // byte
@@ -53,6 +57,8 @@ typedef struct dew_Script {
 	dew_Error *error;
 	dew_Index  error_count;
 	
+	jmp_buf    onError;
+	
 	dew_Chunk *chunk;
 	dew_Index  chunk_count;
 } dew_Script;
@@ -61,6 +67,8 @@ void dew_init(dew_Script *script);
 void dew_free(dew_Script *script);
 void dew_pushError(dew_Script *script, dew_Error error);
 dew_Error dew_popError(dew_Script *script);
+dew_Index dew_countErrors(dew_Script *script);
+int dew_raiseError(dew_Script *script, dew_Error error);
 dew_Error dew_runChunk(dew_Script *script, dew_String code);
 
 #endif
@@ -166,6 +174,15 @@ dew_Index dew_countErrors(dew_Script *script) {
 	 */
 	
 	return script->error_count;
+}
+
+int dew_raiseError(dew_Script *script, dew_Error error) {
+	/**
+	 * Raise an error and jump back to the safe point.
+	 */
+	
+	dew_pushError(script, error);
+	longjmp(script->onError, 2147483647);
 }
 
 /**
@@ -290,6 +307,28 @@ static void dew_pushToken(dew_Script *script, dew_TokenArray *array, dew_Token t
 	}
 	
 	array->data[array->count - 1] = token;
+}
+
+static void dew_freeToken(dew_Token *token) {
+	/**
+	 * Free a single token.
+	 */
+	
+	if (token->type == DEW_TOKEN_STRING || token->type == DEW_TOKEN_SYMBOL) {
+		DEW_FREE(token->value.as_string);
+	}
+}
+
+static void dew_freeTokenArray(volatile dew_TokenArray *array) {
+	/**
+	 * Free an array of tokens.
+	 */
+	
+	for (dew_Index i = 0; i < array->count; i++) {
+		dew_freeToken(&array->data[i]);
+	}
+	
+	DEW_FREE(array->data);
 }
 
 static void dew_tokenise(dew_Script *script, dew_TokenArray *array, dew_String code) {
@@ -576,6 +615,22 @@ static dew_TreeNode *dew_makeTree(dew_Index subnodes) {
 	return node;
 }
 
+static void dew_treeFree(dew_TreeNode *node, size_t primary) {
+	if (node->type == DEW_NODE_SYMBOL || node->type == DEW_NODE_STRING) {
+		DEW_FREE((void *) node->value.as_string);
+	}
+	
+	for (size_t i = 0; i < node->sub_count; i++) {
+		dew_treeFree(&node->sub[i], 1);
+	}
+	
+	DEW_FREE(node->sub);
+	
+	if (primary == 0) {
+		DEW_FREE(node);
+	}
+}
+
 static dew_TreeNode *dew_appendNode(dew_TreeNode *node, dew_TreeNode *app) {
 	/**
 	 * Append a node to another node.
@@ -601,6 +656,10 @@ static dew_TreeNode *dew_makeLiteralNode(dew_Integer type, dew_Value value) {
 	 */
 	
 	dew_TreeNode *node = dew_makeTree(0);
+	
+	if (!node) {
+		return NULL;
+	}
 	
 	node->type = type;
 	node->value = value;
@@ -633,7 +692,9 @@ static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeN
 	
 	dew_TreeNode *node = dew_makeTree(2);
 	
-	if (!node) return NULL;
+	if (!node) {
+		return NULL;
+	}
 	
 	node->type = type;
 	node->value = value;
@@ -649,7 +710,7 @@ static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeN
 #define CURRENT_TOKEN parser->code->data[parser->head]
 #define GET_TOKEN(OFFSET) parser->code->data[parser->head + OFFSET]
 
-static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeNode *tree, dew_Rule rule) {
+static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_Rule rule) {
 	/**
 	 * Match the given rule, and return a tree of all that encompasses the 
 	 * matched rule.
@@ -671,7 +732,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 		if (type == DEW_NODE_GROUPING) {
 			parser->head++;
 			
-			dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_EXPRESSION);
+			dew_TreeNode *left = dew_match(script, parser, DEW_RULE_EXPRESSION);
 			
 			if (!left) {
 				return NULL;
@@ -679,8 +740,13 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			dew_TreeNode *n = dew_uranryTree(DEW_NODE_GROUPING, (dew_Value) {0}, left);
 			
+			if (!n) {
+				dew_treeFree(left, 0);
+				return NULL;
+			}
+			
 			if (n && CURRENT_TOKEN.type != DEW_TOKEN_PAREN_CLOSE) {
-				dew_pushError(script, (dew_Error) {parser->head, "Error: Expected ')' to end grouping."});
+				dew_raiseError(script, (dew_Error) {parser->head, "Error: Expected ')' to end grouping."});
 			}
 			else {
 				parser->head++;
@@ -690,6 +756,10 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 		}
 		else if (type != DEW_NODE_INVALID) {
 			dew_TreeNode *res = dew_makeLiteralNode(type, CURRENT_TOKEN.value);
+			
+			if (!res) {
+				return NULL;
+			}
 			
 			parser->head++;
 			
@@ -711,19 +781,24 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			parser->head++;
 			
-			dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_URANRY);
+			dew_TreeNode *left = dew_match(script, parser, DEW_RULE_URANRY);
 			
-			tree = dew_uranryTree(type, (dew_Value) {0}, left);
+			if (!left) {
+				dew_treeFree(left, 0);
+				return NULL;
+			}
+			
+			dew_TreeNode *tree = dew_uranryTree(type, (dew_Value) {0}, left);
 			
 			return tree;
 		}
 		
-		return dew_match(script, parser, tree, DEW_RULE_LITERAL);
+		return dew_match(script, parser, DEW_RULE_LITERAL);
 	}
 	
 	// Multiply, Divide and Modulo (The linear operators)
 	else if (rule == DEW_RULE_LINEAR) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_URANRY);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_URANRY);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_ASTRESK || CURRENT_TOKEN.type == DEW_TOKEN_BACKSLASH || CURRENT_TOKEN.type == DEW_TOKEN_PERCENT) {
 			dew_Integer type;
@@ -736,7 +811,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			parser->head++;
 			
-			dew_TreeNode *right = dew_match(script, parser, tree, DEW_RULE_URANRY);
+			dew_TreeNode *right = dew_match(script, parser, DEW_RULE_URANRY);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -746,7 +821,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 	
 	// Sublinear (addition and subtraction)
 	else if (rule == DEW_RULE_SUBLINEAR) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_LINEAR);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_LINEAR);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_PLUS || CURRENT_TOKEN.type == DEW_TOKEN_MINUS) {
 			dew_Integer type;
@@ -758,7 +833,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			parser->head++;
 			
-			dew_TreeNode *right = dew_match(script, parser, tree, DEW_RULE_LINEAR);
+			dew_TreeNode *right = dew_match(script, parser, DEW_RULE_LINEAR);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -768,7 +843,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 	
 	// Compare (on numbers)
 	else if (rule == DEW_RULE_COMPARE) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_SUBLINEAR);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_SUBLINEAR);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_POINTYOPEN || CURRENT_TOKEN.type == DEW_TOKEN_POINTYCLOSE || CURRENT_TOKEN.type == DEW_TOKEN_LESSEQUAL || CURRENT_TOKEN.type == DEW_TOKEN_MOREEQUAL) {
 			dew_Integer type;
@@ -782,7 +857,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			parser->head++;
 			
-			dew_TreeNode *right = dew_match(script, parser, tree, DEW_RULE_SUBLINEAR);
+			dew_TreeNode *right = dew_match(script, parser, DEW_RULE_SUBLINEAR);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -792,7 +867,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 	
 	// Compare (on numbers)
 	else if (rule == DEW_RULE_EQUALITY) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_COMPARE);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_COMPARE);
 		
 		while (CURRENT_TOKEN.type == DEW_TOKEN_NOTCOMPARE || CURRENT_TOKEN.type == DEW_TOKEN_COMPARE) {
 			dew_Integer type;
@@ -804,7 +879,7 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 			
 			parser->head++;
 			
-			dew_TreeNode *right = dew_match(script, parser, tree, DEW_RULE_COMPARE);
+			dew_TreeNode *right = dew_match(script, parser, DEW_RULE_COMPARE);
 			
 			left = dew_binaryTree(type, (dew_Value) {0}, left, right);
 		}
@@ -814,17 +889,17 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 	
 	// Expression
 	else if (rule == DEW_RULE_EXPRESSION) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_EQUALITY);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_EQUALITY);
 		
 		return left;
 	}
 	
 	// ExprStatement
 	else if (rule == DEW_RULE_EXPR_STATEMENT) {
-		dew_TreeNode *left = dew_match(script, parser, tree, DEW_RULE_EXPRESSION);
+		dew_TreeNode *left = dew_match(script, parser, DEW_RULE_EXPRESSION);
 		
 		if (left && CURRENT_TOKEN.type != DEW_TOKEN_SEMICOLON) {
-			dew_pushError(script, (dew_Error) {parser->head, "Error: Expected ';' to end statement."});
+			dew_raiseError(script, (dew_Error) {parser->head, "Error: Expected ';' to end statement."});
 		}
 		
 		parser->head++;
@@ -833,8 +908,8 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_TreeN
 	}
 	
 	// Expression
-	else if (rule == DEW_RULE_EXPRESSION || rule == DEW_RULE_DEFAULT) {
-		return dew_match(script, parser, tree, DEW_RULE_EXPR_STATEMENT);
+	else if (rule == DEW_RULE_STATEMENT || rule == DEW_RULE_DEFAULT) {
+		return dew_match(script, parser, DEW_RULE_EXPR_STATEMENT);
 	}
 	
 	return NULL;
@@ -862,7 +937,7 @@ static dew_TreeNode *dew_parse(dew_Script *script, dew_TokenArray *code) {
 	dew_TreeNode *next;
 	
 	do {
-		next = dew_match(script, &parser, NULL, DEW_RULE_DEFAULT);
+		next = dew_match(script, &parser, DEW_RULE_DEFAULT);
 		if (next) {
 			dew_appendNode(root, next);
 		}
@@ -955,39 +1030,76 @@ enum {
 
 dew_Error dew_runChunk(dew_Script *script, dew_String code) {
 	/**
-	 * Run a chunk of code.
+	 * Runs a chunk of code. ´code´ should be a string to the code, and ´script´
+	 * should be an active scripting instance.
+	 * 
+	 * IMPLEMENTATION NOTES
+	 * ====================
+	 *   * I use a lot of casts to avoid adding volatile to the function
+	 *     declarations because I wrote them before the error infrastrcture was
+	 *     in place. In the future, these should be changed so that the
+	 *     functions accept volatile arguments.
 	 */
 	
 	// Initialise token array
-	dew_TokenArray tokens;
-	memset(&tokens, 0, sizeof tokens);
+	// Note: Use volatite otherwise the exact contents of tokens and tree will
+	// not be defined after a longjmp.
+	// https://man7.org/linux/man-pages/man3/setjmp.3.html § NOTES
+	volatile dew_TokenArray tokens = {NULL, 0};
+	volatile dew_TreeNode *tree = NULL;
 	
-	// Tokenise code
-	dew_tokenise(script, &tokens, code);
+	int result = setjmp(script->onError);
 	
-	// Check for errors
-	if (!tokens.count || !tokens.data) {
-		return (dew_Error) {-1, "No tokens to be had, which cannot be a valid input."};
+	// We are running for the first time
+	if (!result) {
+		// Tokenise code
+		dew_tokenise(script, (dew_TokenArray *) &tokens, code);
+		
+		// Check for errors
+		if (!tokens.count || !tokens.data) {
+			return (dew_Error) {-1, "No tokens to be had, which cannot be a valid input."};
+		}
+		
+		if (dew_countErrors(script)) {
+			return (dew_Error) {-1, "Tokenising failed."};
+		}
+		
+		// Parse tokens
+		tree = dew_parse(script, (dew_TokenArray *) &tokens);
+		
+		for (size_t i = 0; i < tokens.count; i++) {
+			printf("Char(%.3d) -> %.3d : %.16X\n", i + 1, tokens.data[i].type, tokens.data[i].value.as_integer);
+		}
+		
+		if (dew_countErrors(script)) {
+			return (dew_Error) {-1, "Parsing failed."};
+		}
+		
+		dew_printTree((dew_TreeNode *) tree, 0);
+		
+		if (tokens.count) {
+			dew_freeTokenArray(&tokens);
+		}
+		
+		if (tree) {
+			dew_treeFree((dew_TreeNode *) tree, 0);
+		}
+		
+		return (dew_Error) {0, "Finished okay!"};
 	}
-	
-	if (dew_countErrors(script)) {
-		return (dew_Error) {-1, "Tokenising failed."};
+	// There was an error, note that it's on the error stack so this is 
+	// (probably) a bit more acceptable than if we just returned normally.
+	else {
+		if (tokens.count) {
+			dew_freeTokenArray(&tokens);
+		}
+		
+		if (tree) {
+			dew_treeFree((dew_TreeNode *) tree, 0);
+		}
+		
+		return (dew_Error) {result, "Failed to run program."};
 	}
-	
-	// Parse tokens
-	dew_TreeNode *tree = dew_parse(script, &tokens);
-	
-	for (size_t i = 0; i < tokens.count; i++) {
-		printf("Char(%.3d) -> %.3d : %.16X\n", i + 1, tokens.data[i].type, tokens.data[i].value.as_integer);
-	}
-	
-	if (dew_countErrors(script)) {
-		return (dew_Error) {-1, "Parsing failed."};
-	}
-	
-	dew_printTree(tree, 0);
-	
-	return (dew_Error) {0, "Finished okay!"};
 }
 
 #endif
