@@ -7,7 +7,7 @@ set(EXEC_NAME dew)
 
 # Source files
 set(EXEC_FILES 
-	src/main.c)
+	dew/main.c)
 
 # Force compiler to high warning levels
 if(MSVC)
