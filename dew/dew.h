@@ -538,6 +538,8 @@ typedef enum dew_Rule {
 	DEW_RULE_EXPRESSION,
 	DEW_RULE_STATEMENT,
 	DEW_RULE_EXPR_STATEMENT,
+	DEW_RULE_VAR_DECLARE,
+	DEW_RULE_ASSIGN,
 } dew_Rule;
 
 enum {
@@ -549,6 +551,7 @@ enum {
 	DEW_NODE_NUMBER,
 	DEW_NODE_STRING,
 	DEW_NODE_SYMBOL,
+	DEW_NODE_NULL,
 	
 	DEW_NODE_ADD,
 	DEW_NODE_SUBTRACT,
@@ -566,6 +569,9 @@ enum {
 	
 	DEW_NODE_EQUAL,
 	DEW_NODE_NOT_EQUAL,
+	
+	DEW_NODE_VAR_DECLARE,
+	DEW_NODE_ASSIGN,
 };
 
 typedef struct dew_TreeNode {
@@ -617,7 +623,7 @@ static dew_TreeNode *dew_makeTree(dew_Index subnodes) {
 
 static void dew_treeFree(dew_TreeNode *node, size_t primary) {
 	if (node->type == DEW_NODE_SYMBOL || node->type == DEW_NODE_STRING) {
-		DEW_FREE((void *) node->value.as_string);
+// 		DEW_FREE((void *) node->value.as_string);
 	}
 	
 	for (size_t i = 0; i < node->sub_count; i++) {
@@ -702,6 +708,30 @@ static dew_TreeNode *dew_binaryTree(dew_Integer type, dew_Value value, dew_TreeN
 	node->sub[1] = *right;
 	
 	DEW_FREE(left);
+	DEW_FREE(right);
+	
+	return node;
+}
+
+static dew_TreeNode *dew_trinaryTree(dew_Integer type, dew_Value value, dew_TreeNode *left, dew_TreeNode *centre, dew_TreeNode *right) {
+	/**
+	 * Allocates a binary tree.
+	 */
+	
+	dew_TreeNode *node = dew_makeTree(3);
+	
+	if (!node) {
+		return NULL;
+	}
+	
+	node->type = type;
+	node->value = value;
+	node->sub[0] = *left;
+	node->sub[1] = *centre;
+	node->sub[2] = *right;
+	
+	DEW_FREE(left);
+	DEW_FREE(centre);
 	DEW_FREE(right);
 	
 	return node;
@@ -907,8 +937,34 @@ static dew_TreeNode *dew_match(dew_Script *script, dew_Parser *parser, dew_Rule 
 		return left;
 	}
 	
+	// Variable Declaration
+	else if (rule == DEW_RULE_VAR_DECLARE) {
+		dew_TreeNode *type = dew_makeLiteralNode(DEW_NODE_SYMBOL, CURRENT_TOKEN.value);
+		parser->head++;
+		
+		dew_TreeNode *name = dew_makeLiteralNode(DEW_NODE_SYMBOL, CURRENT_TOKEN.value);
+		parser->head++;
+		
+		dew_TreeNode *value;
+		
+		if (CURRENT_TOKEN.type == DEW_TOKEN_EQUAL) {
+			parser->head++;
+			
+			value = dew_match(script, parser, DEW_RULE_EXPRESSION);
+		}
+		else {
+			value = dew_makeLiteralNode(DEW_NODE_NULL, (dew_Value) {0});
+		}
+		
+		return dew_trinaryTree(DEW_NODE_VAR_DECLARE, (dew_Value) {0}, type, name, value);
+	}
+	
 	// Expression
 	else if (rule == DEW_RULE_STATEMENT || rule == DEW_RULE_DEFAULT) {
+		if (CURRENT_TOKEN.type == DEW_TOKEN_SYMBOL && GET_TOKEN(1).type == DEW_TOKEN_SYMBOL) {
+			return dew_match(script, parser, DEW_RULE_VAR_DECLARE);
+		}
+		
 		return dew_match(script, parser, DEW_RULE_EXPR_STATEMENT);
 	}
 	
@@ -957,6 +1013,7 @@ static const char *dew_nodeTypeString(dew_Index i) {
 		case DEW_NODE_SEQUENCE: return "DEW_NODE_SEQUENCE";
 		case DEW_NODE_GROUPING: return "DEW_NODE_GROUPING";
 		
+		case DEW_NODE_NULL: return "DEW_NODE_NULL";
 		case DEW_NODE_INTEGER: return "DEW_NODE_INTEGER";
 		case DEW_NODE_NUMBER: return "DEW_NODE_NUMBER";
 		case DEW_NODE_STRING: return "DEW_NODE_STRING";
@@ -974,6 +1031,9 @@ static const char *dew_nodeTypeString(dew_Index i) {
 		case DEW_NODE_GREATER_EQUAL: return "DEW_NODE_GREATER_EQUAL";
 		case DEW_NODE_EQUAL: return "DEW_NODE_EQUAL";
 		case DEW_NODE_NOT_EQUAL: return "DEW_NODE_NOT_EQUAL";
+		
+		case DEW_NODE_VAR_DECLARE: return "DEW_NODE_VAR_DECLARE";
+		case DEW_NODE_ASSIGN: return "DEW_NODE_ASSIGN";
 		
 		default: return "Node";
 	}
@@ -1012,15 +1072,52 @@ static void dew_printTree(dew_TreeNode *node, const dew_Index level) {
 
 /**
  * =============================================================================
- * Virtual Mechine
+ * Virtual Machine
  * =============================================================================
  */
 
+// Opcodes
 enum {
 	DEW_OP_NOP = 0,
 	DEW_OP_RET,
 	DEW_OP_SET,
 };
+
+// Dynamic Array Implementation
+// typedef struct dew_Chunk {
+//   dew_Byte *data;
+//   size_t count;
+//   size_t alloc;
+// } dew_Chunk;
+
+static dew_Chunk *dew_chunkInit(void) {
+	dew_Chunk *chunk = DEW_ALLOCATE(sizeof *chunk);
+	
+	if (!chunk) {
+		return NULL;
+	}
+	
+	chunk->data = NULL;
+	chunk->count = 0;
+	chunk->alloc = 0;
+	
+	return chunk;
+}
+
+static void dew_chunkFree(dew_Chunk *chunk) {
+	if (chunk->data) {
+		DEW_FREE(chunk);
+	}
+	
+	DEW_FREE(chunk);
+}
+
+static void dew_addChunk(dew_Chunk *chunk, uint8_t byte) {
+	if (chunk->count >= chunk->alloc) {
+		chunk->alloc = 2 + chunk->alloc * 2;
+		chunk->data = DEW_REALLOCATE(chunk->data, chunk->alloc);
+	}
+}
 
 /**
  * =============================================================================
