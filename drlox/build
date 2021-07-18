@@ -1,0 +1,1 @@
+gdc -o dlox main.d lox.d
