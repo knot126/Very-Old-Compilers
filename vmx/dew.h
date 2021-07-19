@@ -26,6 +26,7 @@ typedef const char * dew_String;
 typedef enum {
 	DEW_OP_NOP = 0,
 	DEW_OP_RET,
+	DEW_OP_CONST,
 } dew_OpCode;
 
 typedef union {
@@ -52,10 +53,12 @@ typedef struct {
 void dew_chunk_init(dew_Chunk *chunk);
 void dew_chunk_write(dew_Chunk *chunk, uint8_t byte);
 void dew_chunk_dissassemble(dew_Chunk *chunk, const char * const title);
+size_t dew_chunk_add_constant(dew_Chunk *chunk, dew_Value value);
 void dew_chunk_free(dew_Chunk *chunk);
 
 void dew_soup_init(dew_Soup *soup);
-void dew_soup_write(dew_Soup *soup, dew_Value value);
+size_t dew_soup_write(dew_Soup *soup, dew_Value value);
+int64_t dew_soup_get_int(dew_Soup *soup, size_t index);
 void dew_soup_free(dew_Soup *soup);
 
 #endif
@@ -95,6 +98,8 @@ void dew_chunk_init(dew_Chunk *chunk) {
 	chunk->alloc = 8;
 	chunk->data = dew_memory(NULL, chunk->alloc);
 	chunk->count = 0;
+	
+	dew_soup_init(&chunk->soup);
 }
 
 void dew_chunk_write(dew_Chunk *chunk, uint8_t byte) {
@@ -127,6 +132,10 @@ static size_t dew_chunk_diss_instr(dew_Chunk *chunk, size_t where) {
 			printf("ret\n");
 			return 1;
 		}
+		case DEW_OP_CONST: {
+			printf("const %.2X   (= %.16X)\n", chunk->data[where + 1], dew_soup_get_int(&chunk->soup, chunk->data[where + 1]));
+			return 2;
+		}
 		default: {
 			printf("??? %.2X\n", opcode);
 			return 1;
@@ -146,10 +155,16 @@ void dew_chunk_dissassemble(dew_Chunk *chunk, const char * const title) {
 	}
 }
 
+size_t dew_chunk_add_constant(dew_Chunk *chunk, dew_Value value) {
+	return dew_soup_write(&chunk->soup, value);
+}
+
 void dew_chunk_free(dew_Chunk *chunk) {
 	/**
 	 * Free a chunk.
 	 */
+	
+	dew_soup_free(&chunk->soup);
 	
 	chunk->data = dew_memory(chunk->data, 0);
 }
@@ -168,7 +183,7 @@ void dew_soup_init(dew_Soup *soup) {
 	soup->count = 0;
 }
 
-void dew_soup_write(dew_Soup *soup, dew_Value value) {
+size_t dew_soup_write(dew_Soup *soup, dew_Value value) {
 	/**
 	 * Write a value to the soup of values.
 	 */
@@ -180,6 +195,16 @@ void dew_soup_write(dew_Soup *soup, dew_Value value) {
 	
 	soup->data[soup->count] = value;
 	soup->count++;
+	
+	return soup->count - 1;
+}
+
+int64_t dew_soup_get_int(dew_Soup *soup, size_t index) {
+	/**
+	 * Read an integer value from the table.
+	 */
+	
+	return soup->data[index].asInteger;
 }
 
 void dew_soup_free(dew_Soup *soup) {
