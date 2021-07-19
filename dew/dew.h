@@ -22,7 +22,7 @@
 
 #include <inttypes.h>
 #include <stdbool.h>
-#include <stddef.h>
+#include <stdlib.h>
 #include <setjmp.h>
 
 // Basic types
@@ -183,6 +183,16 @@ int dew_raiseError(dew_Script *script, dew_Error error) {
 	
 	dew_pushError(script, error);
 	longjmp(script->onError, 2147483647);
+}
+
+void dew_panic(const char * const reason) {
+	/**
+	 * Panic and exit the application.
+	 */
+	
+	printf("\033[1mPANIC\033[0m: %s\n\n", reason);
+	
+	exit(1);
 }
 
 /**
@@ -1116,6 +1126,10 @@ static void dew_addChunk(dew_Chunk *chunk, uint8_t byte) {
 	if (chunk->count >= chunk->alloc) {
 		chunk->alloc = 2 + chunk->alloc * 2;
 		chunk->data = DEW_REALLOCATE(chunk->data, chunk->alloc);
+		
+		if (!chunk->data) {
+			dew_panic("Failed to allocate chunk memory.");
+		}
 	}
 }
 

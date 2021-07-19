@@ -101,6 +101,9 @@ struct Token {
 		else if (type == Lox.IDENTIFIER) {
 			writeln(value.asString);
 		}
+		else {
+			write("\n");
+		}
 	}
 }
 
@@ -237,21 +240,6 @@ Token[] tokenise(string content) {
 					size_t end = i;
 					
 					string s = content[start .. end];
-					tokens[$ - 1] = Token(Lox.IDENTIFIER, Value(s), start);
-				}
-				
-				else if (isDigit(current)) {
-					tokens.length += 1;
-					
-					size_t start = i;
-					
-					do {
-						i++;
-					} while ((isDigit(content[i]) || content[i] == '.') && i < content.length - 1);
-					
-					size_t end = i;
-					
-					string s = content[start .. end];
 					
 					switch (s) {
 						case "and": {
@@ -271,15 +259,35 @@ Token[] tokenise(string content) {
 							break;
 						}
 						default: {
-							tokens[$ - 1] = Token(Lox.NUMBER, Value(to!double(s)), start);
+							tokens[$ - 1] = Token(Lox.IDENTIFIER, Value(s), start);
+							break;
 						}
 					}
+				}
+				
+				else if (isDigit(current)) {
+					tokens.length += 1;
+					
+					size_t start = i;
+					
+					do {
+						i++;
+					} while ((isDigit(content[i]) || content[i] == '.') && i < content.length - 1);
+					
+					size_t end = i;
+					
+					string s = content[start .. end];
+					tokens[$ - 1] = Token(Lox.NUMBER, Value(to!double(s)), start);
 				}
 			}
 		}
 	}
 	
 	return tokens;
+}
+
+Node parse(Token[] content) {
+	
 }
 
 class Script {
@@ -293,5 +301,7 @@ class Script {
 		foreach (Token t; tokens) {
 			t.print();
 		}
+		
+		Node 
 	}
 }
