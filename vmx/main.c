@@ -8,7 +8,12 @@
 #include "dew.h"
 
 int main(int argc, char *argv[]) {
-	printf("Hello, world!\n");
+	dew_Chunk chunk;
+	
+	dew_chunk_init(&chunk);
+	dew_chunk_write(&chunk, DEW_OP_RET);
+	dew_chunk_dissassemble(&chunk, "main");
+	dew_chunk_free(&chunk);
 	
 	return 0;
 }
