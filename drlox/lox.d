@@ -9,6 +9,8 @@ import std.conv;
 enum Lox {
 	INVALID = 0,
 	
+	GROUPING,
+	
 	NUMBER,
 	STRING,
 	IDENTIFIER,
@@ -154,10 +156,49 @@ struct Node {
 	Node getSub(size_t index) {
 		return nodes[$ - 1];
 	}
+	
+	void print(size_t level) {
+		for (size_t i = 0; i < level; i++) {
+			write("\t");
+		}
+		
+		write("(", this.location, ") ", this.type, " (= ");
+		
+		if (type == Lox.NUMBER) {
+			write(value.asNumber);
+		}
+		else if (type == Lox.STRING) {
+			write("'", value.asString, "'");
+		}
+		else if (type == Lox.IDENTIFIER) {
+			write(value.asString);
+		}
+		else {
+			write("(value)");
+		}
+		
+		writeln("):");
+		
+		foreach (Node n; this.nodes) {
+			n.print(level + 1);
+		}
+	}
 }
 
 struct Enviornment {
 	string[string] env;
+}
+
+class LoxError : Exception {
+	this(string msg, string file = __FILE__, size_t line = __LINE__) {
+		super(msg, file, line);
+	}
+}
+
+class ParsingError : LoxError {
+	this(string msg, string file = __FILE__, size_t line = __LINE__) {
+		super(msg, file, line);
+	}
 }
 
 Token[] tokenise(string content) {
@@ -421,8 +462,153 @@ Token[] tokenise(string content) {
 	return tokens;
 }
 
+class Parser {
+	Token[] tokens;
+	size_t current;
+	
+	this() {
+		this.tokens = null;
+		this.current = 0;
+	}
+	
+	bool match(Lox type) {
+		if (current == tokens.length) {
+			return false;
+		}
+		
+		if (type == tokens[current].type) {
+			this.current += 1;
+			return true;
+		}
+		
+		return false;
+	}
+	
+	void expect(Lox type, string reason) {
+		if (tokens[current].type != type) {
+			throw new ParsingError(reason);
+		}
+		else {
+			this.current += 1;
+		}
+	}
+	
+	Token previous() {
+		return tokens[current - 1];
+	}
+	
+	Lox previous_type() {
+		return tokens[current - 1].type;
+	}
+	
+	size_t location() {
+		return tokens[current - 1].location;
+	}
+	
+	Node parse(Token[] tokens) {
+		this.tokens = tokens;
+		return this.expression();
+	}
+	
+	Node expression() {
+		return this.equality();
+	}
+	
+	Node equality() {
+		Node left = this.comparison();
+		
+		while (this.match(Lox.BANG_EQUAL) || this.match(Lox.EQUAL_EQUAL)) {
+			Lox type = this.previous_type();
+			Node right = this.comparison();
+			left = Node(type, Value(0), this.location(), left, right);
+		}
+		
+		return left;
+	}
+	
+	Node comparison() {
+		Node left = this.term();
+		
+		while (this.match(Lox.GREATER) || this.match(Lox.GREATER_EQUAL) || this.match(Lox.LESS) || this.match(Lox.GREATER)) {
+			Lox type = this.previous_type();
+			Node right = this.term();
+			left = Node(type, Value(0), this.location(), left, right);
+		}
+		
+		return left;
+	}
+	
+	Node term() {
+		Node left = this.factor();
+		
+		while (this.match(Lox.PLUS) || this.match(Lox.MINUS)) {
+			Lox type = this.previous_type();
+			Node right = this.factor();
+			left = Node(type, Value(0), this.location(), left, right);
+		}
+		
+		return left;
+	}
+	
+	Node factor() {
+		Node left = this.unary();
+		
+		while (this.match(Lox.SLASH) || this.match(Lox.STAR)) {
+			Lox type = this.previous_type();
+			Node right = this.unary();
+			left = Node(type, Value(0), this.location(), left, right);
+		}
+		
+		return left;
+	}
+	
+	Node unary() {
+		if (this.match(Lox.BANG) || this.match(Lox.SLASH)) {
+			Lox type = this.previous_type();
+			Node left = this.unary();
+			return Node(type, Value(0), this.location(), left);
+		}
+		
+		return this.primary();
+	}
+	
+	Node primary() {
+		if (this.match(Lox.FASLE)) {
+			return Node(Lox.BOOLEAN, Value(false), this.location());
+		}
+		
+		if (this.match(Lox.TRUE)) {
+			return Node(Lox.BOOLEAN, Value(true), this.location());
+		}
+		
+		if (this.match(Lox.NIL)) {
+			return Node(Lox.NIL, Value(0), this.location());
+		}
+		
+		if (this.match(Lox.NUMBER)) {
+			return Node(Lox.NUMBER, this.previous().value, this.location());
+		}
+		
+		if (this.match(Lox.STRING)) {
+			return Node(Lox.STRING, this.previous().value, this.location());
+		}
+		
+		if (this.match(Lox.LEFT_PAREN)) {
+			Node left = this.expression();
+			this.expect(Lox.RIGHT_PAREN, "Expecting ')' to end expression.");
+			return Node(Lox.GROUPING, Value(0), this.location(), left);
+		}
+		
+		throw new ParsingError("Not a valid primary expression.");
+		
+		return Node(Lox.INVALID, Value(0), this.location());
+	}
+}
+
 Node parse(Token[] content) {
-	return Node(Lox.INVALID, Value(0), 0);
+	Parser p = new Parser();
+	
+	return p.parse(content);
 }
 
 class Script {
@@ -433,10 +619,7 @@ class Script {
 	void run(string content) {
 		Token[] tokens = tokenise(content);
 		
-		foreach (Token t; tokens) {
-			t.print();
-		}
-		
 		Node node = parse(tokens);
+		node.print(0);
 	}
 }
