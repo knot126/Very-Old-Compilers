@@ -119,9 +119,40 @@ struct Node {
 		this.location = location;
 	}
 	
+	this(Lox type, Value value, size_t location, Node left) {
+		this.type = type;
+		this.value = value;
+		this.location = location;
+		
+		this.addSub(left);
+	}
+	
+	this(Lox type, Value value, size_t location, Node left, Node right) {
+		this.type = type;
+		this.value = value;
+		this.location = location;
+		
+		this.addSub(left);
+		this.addSub(right);
+	}
+	
+	this(Lox type, Value value, size_t location, Node left, Node centre, Node right) {
+		this.type = type;
+		this.value = value;
+		this.location = location;
+		
+		this.addSub(left);
+		this.addSub(centre);
+		this.addSub(right);
+	}
+	
 	void addSub(Node node) {
 		nodes.length += 1;
 		nodes[$ - 1] = node;
+	}
+	
+	Node getSub(size_t index) {
+		return nodes[$ - 1];
 	}
 }
 
@@ -202,6 +233,62 @@ Token[] tokenise(string content) {
 				break;
 			}
 			
+			case '!': {
+				++i;
+				if (content[i] == '=') {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.BANG_EQUAL, Value(0), i);
+					break;
+				}
+				else {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.BANG, Value(0), i);
+					break;
+				}
+			}
+			
+			case '=': {
+				++i;
+				if (content[i] == '=') {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.EQUAL_EQUAL, Value(0), i);
+					break;
+				}
+				else {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.EQUAL, Value(0), i);
+					break;
+				}
+			}
+			
+			case '>': {
+				++i;
+				if (content[i] == '=') {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.GREATER_EQUAL, Value(0), i);
+					break;
+				}
+				else {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.GREATER, Value(0), i);
+					break;
+				}
+			}
+			
+			case '<': {
+				++i;
+				if (content[i] == '=') {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.LESS_EQUAL, Value(0), i);
+					break;
+				}
+				else {
+					tokens.length += 1;
+					tokens[$ - 1] = Token(Lox.LESS, Value(0), i);
+					break;
+				}
+			}
+			
 			// Strings
 			case '"': {
 				tokens.length += 1;
@@ -237,7 +324,7 @@ Token[] tokenise(string content) {
 						i++;
 					} while ((isAlphaNum(content[i]) || content[i] == '_') && i < content.length - 1);
 					
-					size_t end = i;
+					size_t end = i--;
 					
 					string s = content[start .. end];
 					
@@ -258,6 +345,54 @@ Token[] tokenise(string content) {
 							tokens[$ - 1] = Token(Lox.BOOLEAN, Value(false), start);
 							break;
 						}
+						case "fun": {
+							tokens[$ - 1] = Token(Lox.FUN, Value(0), start);
+							break;
+						}
+						case "for": {
+							tokens[$ - 1] = Token(Lox.FOR, Value(0), start);
+							break;
+						}
+						case "if": {
+							tokens[$ - 1] = Token(Lox.IF, Value(0), start);
+							break;
+						}
+						case "nil": {
+							tokens[$ - 1] = Token(Lox.NIL, Value(0), start);
+							break;
+						}
+						case "or": {
+							tokens[$ - 1] = Token(Lox.OR, Value(0), start);
+							break;
+						}
+						case "print": {
+							tokens[$ - 1] = Token(Lox.PRINT, Value(0), start);
+							break;
+						}
+						case "return": {
+							tokens[$ - 1] = Token(Lox.RETURN, Value(0), start);
+							break;
+						}
+						case "super": {
+							tokens[$ - 1] = Token(Lox.SUPER, Value(0), start);
+							break;
+						}
+						case "this": {
+							tokens[$ - 1] = Token(Lox.THIS, Value(0), start);
+							break;
+						}
+						case "true": {
+							tokens[$ - 1] = Token(Lox.BOOLEAN, Value(true), start);
+							break;
+						}
+						case "var": {
+							tokens[$ - 1] = Token(Lox.VAR, Value(0), start);
+							break;
+						}
+						case "while": {
+							tokens[$ - 1] = Token(Lox.WHILE, Value(0), start);
+							break;
+						}
 						default: {
 							tokens[$ - 1] = Token(Lox.IDENTIFIER, Value(s), start);
 							break;
@@ -274,7 +409,7 @@ Token[] tokenise(string content) {
 						i++;
 					} while ((isDigit(content[i]) || content[i] == '.') && i < content.length - 1);
 					
-					size_t end = i;
+					size_t end = i--;
 					
 					string s = content[start .. end];
 					tokens[$ - 1] = Token(Lox.NUMBER, Value(to!double(s)), start);
@@ -287,7 +422,7 @@ Token[] tokenise(string content) {
 }
 
 Node parse(Token[] content) {
-	
+	return Node(Lox.INVALID, Value(0), 0);
 }
 
 class Script {
@@ -302,6 +437,6 @@ class Script {
 			t.print();
 		}
 		
-		Node 
+		Node node = parse(tokens);
 	}
 }
