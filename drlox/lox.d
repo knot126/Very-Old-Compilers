@@ -109,6 +109,47 @@ struct Token {
 	}
 }
 
+struct InterpreterValue {
+	Lox type;
+	Value value;
+	
+	this(Lox type) {
+		this.type = type;
+		this.value = Value(0);
+	}
+	
+	this(Lox type, Value value) {
+		this.type = type;
+		this.value = value;
+	}
+	
+	void print() {
+		if (type == Lox.NUMBER) {
+			write(value.asNumber);
+		}
+		else if (type == Lox.STRING) {
+			write("'", value.asString, "'");
+		}
+		else if (type == Lox.IDENTIFIER) {
+			write(value.asString);
+		}
+		else if (type == Lox.BOOLEAN) {
+			if (value.asBoolean == false) {
+				write("false");
+			}
+			else {
+				write("true");
+			}
+		}
+		else if (type == Lox.NIL) {
+			write("nil");
+		}
+		else {
+			write("<object ", type, ">");
+		}
+	}
+}
+
 struct Node {
 	Lox type;
 	Value value;
@@ -189,6 +230,10 @@ struct Enviornment {
 	string[string] env;
 }
 
+/**
+ * Errors
+ */
+
 class LoxError : Exception {
 	this(string msg, string file = __FILE__, size_t line = __LINE__) {
 		super(msg, file, line);
@@ -196,6 +241,12 @@ class LoxError : Exception {
 }
 
 class ParsingError : LoxError {
+	this(string msg, string file = __FILE__, size_t line = __LINE__) {
+		super(msg, file, line);
+	}
+}
+
+class InterpreterError : LoxError {
 	this(string msg, string file = __FILE__, size_t line = __LINE__) {
 		super(msg, file, line);
 	}
@@ -611,6 +662,54 @@ Node parse(Token[] content) {
 	return p.parse(content);
 }
 
+InterpreterValue ivAdd(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(a.value.asNumber + b.value.asNumber));
+	}
+	
+	else if (a.type == Lox.STRING && b.type == Lox.STRING) {
+		return InterpreterValue(Lox.STRING, Value(format("%s%s", a.value.asString, b.value.asString)));
+	}
+	
+	throw new InterpreterError("Cannot concatinate two values of this type.");
+}
+
+InterpreterValue interpret(Node node) {
+	switch (node.type) {
+		case Lox.NIL: {
+			return InterpreterValue(Lox.NIL);
+			break;
+		}
+		
+		case Lox.NUMBER:
+		case Lox.STRING:
+		case Lox.BOOLEAN:
+		case Lox.IDENTIFIER: {
+			return InterpreterValue(node.type, node.value);
+			break;
+		}
+		
+		case Lox.GROUPING: {
+			return interpret(node.nodes[0]);
+			break;
+		}
+		
+		case Lox.PLUS: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivAdd(left, right);
+			break;
+		}
+		
+		default: {
+			throw new InterpreterError("Unsupported node type.");
+			break;
+		}
+	}
+	
+	return InterpreterValue(Lox.INVALID);
+}
+
 class Script {
 	Enviornment env;
 	
@@ -621,5 +720,8 @@ class Script {
 		
 		Node node = parse(tokens);
 		node.print(0);
+		
+		interpret(node).print();
+		writeln();
 	}
 }
