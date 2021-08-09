@@ -23,6 +23,7 @@ enum Lox {
 	COMMA,
 	DOT,
 	MINUS,
+	PERCENT,
 	PLUS,
 	SEMICOLON,
 	SLASH,
@@ -301,6 +302,12 @@ Token[] tokenise(string content) {
 				break;
 			}
 			
+			case '%': {
+				tokens.length += 1;
+				tokens[$ - 1] = Token(Lox.PERCENT, Value(0), i);
+				break;
+			}
+			
 			case '+': {
 				tokens.length += 1;
 				tokens[$ - 1] = Token(Lox.PLUS, Value(0), i);
@@ -334,7 +341,7 @@ Token[] tokenise(string content) {
 				}
 				else {
 					tokens.length += 1;
-					tokens[$ - 1] = Token(Lox.BANG, Value(0), i);
+					tokens[$ - 1] = Token(Lox.BANG, Value(0), --i);
 					break;
 				}
 			}
@@ -348,7 +355,7 @@ Token[] tokenise(string content) {
 				}
 				else {
 					tokens.length += 1;
-					tokens[$ - 1] = Token(Lox.EQUAL, Value(0), i);
+					tokens[$ - 1] = Token(Lox.EQUAL, Value(0), --i);
 					break;
 				}
 			}
@@ -362,7 +369,7 @@ Token[] tokenise(string content) {
 				}
 				else {
 					tokens.length += 1;
-					tokens[$ - 1] = Token(Lox.GREATER, Value(0), i);
+					tokens[$ - 1] = Token(Lox.GREATER, Value(0), --i);
 					break;
 				}
 			}
@@ -376,7 +383,7 @@ Token[] tokenise(string content) {
 				}
 				else {
 					tokens.length += 1;
-					tokens[$ - 1] = Token(Lox.LESS, Value(0), i);
+					tokens[$ - 1] = Token(Lox.LESS, Value(0), --i);
 					break;
 				}
 			}
@@ -556,9 +563,25 @@ class Parser {
 		return tokens[current - 1].location;
 	}
 	
-	Node parse(Token[] tokens) {
+	Node[] parse(Token[] tokens) {
 		this.tokens = tokens;
-		return this.expression();
+		Node[] nodes;
+		
+		while (this.current < this.tokens.length) {
+			nodes.length += 1;
+			nodes[$ - 1] = this.expr_stmt();
+		}
+		
+		return nodes;
+	}
+	
+	Node expr_stmt() {
+		/**
+		 * Do an expression statement
+		 */
+		Node n = this.expression();
+		this.expect(Lox.SEMICOLON, "Expecting semicolon at end of expresion statement.");
+		return n;
 	}
 	
 	Node expression() {
@@ -604,7 +627,7 @@ class Parser {
 	Node factor() {
 		Node left = this.unary();
 		
-		while (this.match(Lox.SLASH) || this.match(Lox.STAR)) {
+		while (this.match(Lox.SLASH) || this.match(Lox.STAR) || this.match(Lox.PERCENT)) {
 			Lox type = this.previous_type();
 			Node right = this.unary();
 			left = Node(type, Value(0), this.location(), left, right);
@@ -614,7 +637,7 @@ class Parser {
 	}
 	
 	Node unary() {
-		if (this.match(Lox.BANG) || this.match(Lox.SLASH)) {
+		if (this.match(Lox.BANG) || this.match(Lox.MINUS)) {
 			Lox type = this.previous_type();
 			Node left = this.unary();
 			return Node(type, Value(0), this.location(), left);
@@ -656,10 +679,34 @@ class Parser {
 	}
 }
 
-Node parse(Token[] content) {
+Node[] parse(Token[] content) {
 	Parser p = new Parser();
 	
 	return p.parse(content);
+}
+
+InterpreterValue ivNegate(InterpreterValue a) {
+	if (a.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(-a.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot negate this type.");
+}
+
+InterpreterValue ivTrue(InterpreterValue a) {
+	if (
+		(a.type == Lox.BOOLEAN && a.value.asBoolean == false) || 
+		(a.type == Lox.NUMBER && a.value.asNumber == 0.0) ||
+		(a.type == Lox.NIL)
+	) {
+		return InterpreterValue(Lox.BOOLEAN, Value(false));
+	}
+	
+	return InterpreterValue(Lox.BOOLEAN, Value(true));
+}
+
+InterpreterValue ivOpposite(InterpreterValue a) {
+	return InterpreterValue(Lox.BOOLEAN, Value(!a.value.asBoolean));
 }
 
 InterpreterValue ivAdd(InterpreterValue a, InterpreterValue b) {
@@ -671,7 +718,79 @@ InterpreterValue ivAdd(InterpreterValue a, InterpreterValue b) {
 		return InterpreterValue(Lox.STRING, Value(format("%s%s", a.value.asString, b.value.asString)));
 	}
 	
-	throw new InterpreterError("Cannot concatinate two values of this type.");
+	throw new InterpreterError("Cannot add or concatinate two values of this type.");
+}
+
+InterpreterValue ivSub(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(a.value.asNumber - b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot subtract two non-number values.");
+}
+
+InterpreterValue ivMul(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(a.value.asNumber * b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot multiply two non-number values.");
+}
+
+InterpreterValue ivDiv(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(a.value.asNumber / b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot divide two non-number values.");
+}
+
+InterpreterValue ivMod(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.NUMBER, Value(cast(double)(cast(long)a.value.asNumber % cast(long)b.value.asNumber)));
+	}
+	
+	throw new InterpreterError("Cannot modulo two non-number values.");
+}
+
+InterpreterValue ivGreater(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.BOOLEAN, Value(a.value.asNumber > b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot compare two non-number values.");
+}
+
+InterpreterValue ivGreaterEq(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.BOOLEAN, Value(a.value.asNumber >= b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot compare two non-number values.");
+}
+
+InterpreterValue ivLess(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.BOOLEAN, Value(a.value.asNumber < b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot compare two non-number values.");
+}
+
+InterpreterValue ivLessEq(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.NUMBER && b.type == Lox.NUMBER) {
+		return InterpreterValue(Lox.BOOLEAN, Value(a.value.asNumber <= b.value.asNumber));
+	}
+	
+	throw new InterpreterError("Cannot compare two non-number values.");
+}
+
+InterpreterValue ivEqual(InterpreterValue a, InterpreterValue b) {
+	if (a.type == Lox.STRING && b.type == Lox.STRING) {
+		return InterpreterValue(Lox.BOOLEAN, Value(a.value.asString == b.value.asString));
+	}
+	
+	return InterpreterValue(Lox.BOOLEAN, Value(a.value.asNumber == b.value.asNumber));
 }
 
 InterpreterValue interpret(Node node) {
@@ -701,6 +820,88 @@ InterpreterValue interpret(Node node) {
 			break;
 		}
 		
+		case Lox.MINUS: {
+			if (node.nodes.length == 2) {
+				InterpreterValue left = interpret(node.nodes[0]);
+				InterpreterValue right = interpret(node.nodes[1]);
+				return ivSub(left, right);
+			}
+			else {
+				InterpreterValue left = interpret(node.nodes[0]);
+				return ivNegate(left);
+			}
+			break;
+		}
+		
+		case Lox.STAR: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivMul(left, right);
+			break;
+		}
+		
+		case Lox.SLASH: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivDiv(left, right);
+			break;
+		}
+		
+		case Lox.PERCENT: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivMod(left, right);
+			break;
+		}
+		
+		case Lox.BANG: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			return ivOpposite(ivTrue(left));
+			break;
+		}
+		
+		case Lox.GREATER: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivGreater(left, right);
+			break;
+		}
+		
+		case Lox.GREATER_EQUAL: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivGreaterEq(left, right);
+			break;
+		}
+		
+		case Lox.LESS: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivLess(left, right);
+			break;
+		}
+		
+		case Lox.LESS_EQUAL: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivLessEq(left, right);
+			break;
+		}
+		
+		case Lox.EQUAL_EQUAL: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivEqual(left, right);
+			break;
+		}
+		
+		case Lox.BANG_EQUAL: {
+			InterpreterValue left = interpret(node.nodes[0]);
+			InterpreterValue right = interpret(node.nodes[1]);
+			return ivOpposite(ivEqual(left, right));
+			break;
+		}
+		
 		default: {
 			throw new InterpreterError("Unsupported node type.");
 			break;
@@ -710,18 +911,28 @@ InterpreterValue interpret(Node node) {
 	return InterpreterValue(Lox.INVALID);
 }
 
+void interpret_list(Node[] nodes) {
+	for (size_t i = 0; i < nodes.length; i++) {
+		interpret(nodes[i]).print();
+		writeln();
+	}
+}
+
 class Script {
 	Enviornment env;
 	
 	this() {}
 	
 	void run(string content) {
-		Token[] tokens = tokenise(content);
-		
-		Node node = parse(tokens);
-		node.print(0);
-		
-		interpret(node).print();
-		writeln();
+		try {
+			Token[] tokens = tokenise(content);
+			
+			Node[] nodes = parse(tokens);
+			
+			interpret_list(nodes);
+		}
+		catch (LoxError e) {
+			writeln("\033[1;31mERROR\033[0m\n", e.msg);
+		}
 	}
 }
