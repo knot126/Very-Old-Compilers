@@ -1,0 +1,29 @@
+/**
+ * KINL function to brute-force search a given list of items.
+ */
+
+/**
+ * Note: This uses the @: operator, which is like the ?: operator but for loops.
+ * 
+ * Basic synopsis of the @: operator:
+ *   (condition to remain true) @ 
+ *     (while the condition remains true) : 
+ *     (run once after if and only if the condition becomes false; optional);
+ * 
+ * Also an important note about blocks:
+ * The break keyword can be used to emit a result immidately at any point in a 
+ * block. If there is no break keyword, the last produced result from the
+ * expression is used instead.
+ */
+
+brt_search = (list, what) {
+	i = 0;          // emits: 0, discarded
+	return (length(list) > i) @ // while (length(list) > i)
+		{ (item == list[i]) ? (break item) : (i++) ; } // if (list[i] == item) { emit item; } else { i++; }
+		: nil;     // return nil if the condition ever becomes false (failed to find)
+};
+
+ints = [1, 2, 4, 6, 5, 2, 3, 6, 2]
+find = 5
+
+print(brt_search(ints, find));

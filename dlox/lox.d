@@ -575,6 +575,12 @@ class Parser {
 		return nodes;
 	}
 	
+	Node stmt() {
+		if (this.match(Lox.PRINT)) {
+			
+		}
+	}
+	
 	Node expr_stmt() {
 		/**
 		 * Do an expression statement
@@ -582,6 +588,10 @@ class Parser {
 		Node n = this.expression();
 		this.expect(Lox.SEMICOLON, "Expecting semicolon at end of expresion statement.");
 		return n;
+	}
+	
+	Node print_stmt() {
+		
 	}
 	
 	Node expression() {

@@ -1,4 +1,6 @@
-# Knot's Programming Langauges
+# Knot's [VERY VERY OLD ATTEMPT AT MAKING] Programming Langauges
+
+*Note: This repository is only available for historical purposes and was last updated in mid-2021. Any new compiler-related things will be made under the "WorseIdea" organisation on GitHub.*
 
 This repo contains some of my first attempts at creating interpreters for simple programming languages. I will be using resources like the guide at [Crafting Interpreters](https://craftinginterpreters.com/) but also probably referring to other resources like the Dragon book and the like.
 
